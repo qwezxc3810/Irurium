@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="200" viewBox="0 0 160 200">
+<!-- 임시 리소스: 모래 등불(상징) -->
+<defs><radialGradient id="g" cx="0.5" cy="0.45" r="0.5"><stop offset="0" stop-color="#FEF3C7"/><stop offset="1" stop-color="#F59E0B" stop-opacity="0"/></radialGradient></defs>
+<circle cx="80" cy="96" r="70" fill="url(#g)"/>
+<rect x="56" y="70" width="48" height="66" rx="10" fill="#FCD34D" stroke="#92400E" stroke-width="5"/>
+<rect x="70" y="136" width="20" height="64" fill="#92400E"/><path d="M50 70 L80 46 L110 70 Z" fill="#92400E"/>
+</svg>

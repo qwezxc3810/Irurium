@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120" viewBox="0 0 200 120">
+<!-- 임시 리소스: 둥근 수석. 바닥 가운데 기준(anchor 0.5, 1) -->
+<defs><radialGradient id="r" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#D6D3D1"/><stop offset="1" stop-color="#57534E"/></radialGradient></defs>
+<path d="M14 120 C10 70 50 22 104 20 C160 18 194 66 188 120 Z" fill="url(#r)"/>
+</svg>

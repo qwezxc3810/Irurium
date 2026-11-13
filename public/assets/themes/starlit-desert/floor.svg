@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="140" viewBox="0 0 1000 140">
+<!-- 임시 리소스: 모래 바닥. 위쪽 경계가 물결 모양, 아래로 꽉 참 -->
+<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E7C99A"/><stop offset="1" stop-color="#B08D5A"/></linearGradient></defs>
+<path d="M0 30 C120 6 260 28 400 18 C560 6 700 34 840 20 C920 12 970 18 1000 24 L1000 140 L0 140 Z" fill="url(#s)"/>
+</svg>
