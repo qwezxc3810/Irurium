@@ -34,6 +34,8 @@ const PREVIOUS_SVG: AssetOverrides = {
   'plant.foxtail': { src: 'plants/foxtail.svg', displayHeight: 210, sway: { amplitude: 0.07, frequency: 0.4 } },
   'rock.round': { src: 'rocks/round.svg', displayWidth: 130 },
   'rock.sharp': { src: 'rocks/sharp.svg', displayWidth: 130 },
+  'symbol.rose-coral': { src: 'symbols/rose-coral.svg', displayHeight: 130 },
+  'symbol.sand-lantern': { src: 'symbols/sand-lantern.svg', displayHeight: 130 },
 };
 
 /** 물고기 4종을 한눈에 보는 시험 장면(엔진 결과가 아님) */
@@ -51,6 +53,8 @@ function allFish(): TankState {
       { id: 'p3', el: 'plant.foxtail', kind: 'plant', layer: 'back', x: 230, y: 505, scale: 0.9, tint: 0, bornSeq: 8 },
       { id: 'r1', el: 'rock.sharp', kind: 'rock', layer: 'floor', x: 520, y: 522, scale: 1.0, tint: 0, bornSeq: 9 },
       { id: 'r2', el: 'rock.round', kind: 'rock', layer: 'floor', x: 720, y: 522, scale: 1.0, tint: 0, bornSeq: 10 },
+      { id: 's1', el: 'symbol.rose-coral', kind: 'symbol', layer: 'floor', x: 380, y: 518, scale: 1.0, tint: 0, bornSeq: 11 },
+      { id: 's2', el: 'symbol.sand-lantern', kind: 'symbol', layer: 'floor', x: 640, y: 518, scale: 1.0, tint: 0, bornSeq: 12 },
     ],
   };
 }
@@ -77,7 +81,7 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
       return frameAt(r, r.frames.length).state;
     };
     return [
-      { id: 'all', name: '물고기 4종 + 수초·수석(시험 장면)', state: allFish() },
+      { id: 'all', name: '전체 세트(시험 장면)', state: allFish() },
       { id: 'close', name: '금붕어 클로즈업(시험 장면)', state: closeUp() },
       { id: 'C', name: '어린왕자 14일 완성(사례 C)', state: last('case-C', 'C') },
       { id: 'warm', name: '따뜻함 14일', state: last('cmp-emotion', 'CE1') },
@@ -105,7 +109,7 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
       <section className="card notice">
         <OriginBadge origin="sample" />
         <p>같은 어항 상태를 세 가지 금붕어 그림으로 나란히 움직여 봐요. 엔진 결과는 셋 다 똑같고 <b>그림만</b> 달라요. 2026-11-13 기획자 결정으로 <b>세미 리얼</b>을 앱(manifest.json)에 적용했어요. 세미 리얼 칸은 앱과 같은 설정(크기 180, 휘는 정도 0.08)이에요.</p>
-        <p className="hint">물고기 4종과 수초 3종·수석 2종은 세미 리얼로 바뀌었고, 배경·바닥·상징(장미 산호·모래 등불)은 아직 임시 SVG예요. "이전(임시 SVG)" 칸은 물고기·수초·수석 모두 예전 그림이고, "실사" 칸은 금붕어만 실사로 바꿔 보여 줘요.</p>
+        <p className="hint">물고기·수초·수석·상징·배경·바닥이 모두 세미 리얼이에요. "이전(임시 SVG)" 칸은 물고기·수초·수석·상징을 예전 그림으로 보여 줘요(배경·바닥은 테마 단위라 세 칸 모두 새 배경). "실사" 칸은 금붕어만 실사로 바꿔 보여 줘요.</p>
       </section>
       <section className="card">
         <div className="field">장면
