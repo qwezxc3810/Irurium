@@ -33,14 +33,15 @@ const yOverlap = (a: number, ha: number, b: number, hb: number) => Math.max(0, M
 
 /**
  * 물고기 헤엄 높이 배치(화면용). 엔진 레인은 170·290·400 세 개뿐이라 물고기가 많아지면 같은 높이에 몰려 겹친다.
- * 큰 물고기부터 차례로, 엔진 레인에서 ±3칸(22px 간격) 안에서 이미 놓인 물고기와 세로로 가장 덜 겹치는 높이를 고른다.
+ * 먼저 태어난 물고기부터 차례로, 엔진 레인에서 ±3칸(22px 간격) 안에서 이미 놓인 물고기와 세로로 가장 덜 겹치는 높이를 고른다.
+ * 태어난 순서로 놓기 때문에 새 물고기가 생겨도 기존 물고기의 높이는 바뀌지 않는다(PR #8 리뷰: 불필요한 세로 이동 방지).
  * 물고기는 좌우로 헤엄치므로 세로 띠가 겹치지 않아야 실제로 덜 겹친다. 같은 상태면 언제나 같은 결과(결정적).
  */
 export function fishLaneLayout(objects: PlacedObject[], assets: Record<string, ElementAsset>): Map<string, number> {
   const fish = objects
     .filter((o) => o.kind === 'fish')
     .map((o) => ({ o, h: fishHeight(o, assets[o.el]) }))
-    .sort((a, b) => b.h - a.h || a.o.id.localeCompare(b.o.id));
+    .sort((a, b) => a.o.bornSeq - b.o.bornSeq || a.o.id.localeCompare(b.o.id));
   const placed: Array<{ y: number; h: number }> = [];
   const out = new Map<string, number>();
   for (const { o, h } of fish) {

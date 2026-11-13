@@ -267,7 +267,8 @@ function OcclusionCard({ suite }: { suite: SuiteResult }) {
   return (
     <section className="card">
       <h2>물고기 가림 지표 (이슈 #6)</h2>
-      <p className="hint">엔진 상태는 그대로 두고 화면 표시 규칙만 바꿨어요: 1배를 넘는 성장은 절반만 커 보이게(물고기 60%), 앞쪽 수초는 60% 높이, 물고기가 앞쪽 수초 뒤를 지나면 수초가 옅어짐, 물고기 헤엄 높이를 세로로 덜 겹치게 배치. 기준(초안): 실제 가림 {pct(OCCLUSION_TARGET.effectiveCover)} 미만, 수초 꼭대기 y {OCCLUSION_TARGET.plantTopMin} 아래. 물고기 위치는 시작 위치 기준 근사값이에요.</p>
+      <p className="hint">엔진 상태는 그대로 두고 화면 표시 규칙만 바꿨어요: 1배를 넘는 성장은 절반만 커 보이게(물고기 60%), 앞쪽 수초는 60% 높이, 물고기가 앞쪽 수초 뒤를 지나면 수초가 옅어짐, 물고기 헤엄 높이를 세로로 덜 겹치게 배치. 기준 [검증용 가설, 사용자 검증 전]: 실제 가림 {pct(OCCLUSION_TARGET.effectiveCover)} 미만, 수초 꼭대기 y {OCCLUSION_TARGET.plantTopMin} 아래. 물고기 헤엄 높이는 먼저 태어난 물고기부터 정해서, 새 물고기가 생겨도 기존 물고기는 움직이지 않아요.</p>
+      <p className="limit"><b>샘플 시작 위치 기반 근사값이에요.</b> 0%는 "샘플 어항의 시작 위치에서 사각형끼리 겹치지 않는다"는 뜻이에요. 헤엄 중 위치, 수초 흔들림, 투명한 픽셀 모양은 반영하지 않아서 실제 화면에서 순간적인 가림은 생길 수 있어요. 움직이는 화면(갤러리 그림을 눌러 열기)으로 함께 확인해 주세요.</p>
       {!assets ? <p className="hint">그래픽 크기 정보를 불러오는 중…</p> : (
         <div className="table-wrap">
           <table className="metrics">

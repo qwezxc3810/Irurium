@@ -160,7 +160,9 @@ export function buildReport(s: SuiteResult, opts: { determinism?: boolean; asset
   if (opts.assets) {
     L.push('## 8. 물고기 가림 (이슈 #6) — 화면 표시 규칙 비교');
     L.push('');
-    L.push(`엔진 상태는 같고 표시 규칙만 비교해요(src/render/display.ts). 기준(초안): 실제 가림 ${pct(OCCLUSION_TARGET.effectiveCover)} 미만, 수초 꼭대기 y ${OCCLUSION_TARGET.plantTopMin} 아래. 물고기는 시작 위치 기준 근사값.`);
+    L.push(`엔진 상태는 같고 표시 규칙만 비교해요(src/render/display.ts). 기준 [검증용 가설, 사용자 검증 전]: 실제 가림 ${pct(OCCLUSION_TARGET.effectiveCover)} 미만, 수초 꼭대기 y ${OCCLUSION_TARGET.plantTopMin} 아래.`);
+    L.push('');
+    L.push('**샘플 시작 위치 기반 근사값이에요.** 0%는 "샘플 어항의 시작 위치에서 사각형끼리 겹치지 않는다"는 뜻이에요. 헤엄 중 위치, 수초 흔들림, 투명한 픽셀 모양은 반영하지 않아서 실제 화면에서 순간적인 가림은 생길 수 있어요. 움직이는 화면(검증실 갤러리에서 그림을 눌러 열기)으로 함께 확인해 주세요.');
     L.push('');
     L.push('| 어항 | 물고기 | 앞 수초에 가림 (이전 → 지금·실제) | 수초 꼭대기 y | 물고기끼리 겹침 | 헤엄 띠 겹침 |');
     L.push('|---|---|---|---|---|---|');
@@ -168,7 +170,7 @@ export function buildReport(s: SuiteResult, opts: { determinism?: boolean; asset
       L.push(`| ${r.label} | ${r.after.fish} | ${pct(r.before.frontCover)} → **${pct(r.after.effectiveCover)}** | ${Math.round(r.before.plantTop)} → **${Math.round(r.after.plantTop)}** | ${pct(r.before.fishOverlap)} → **${pct(r.after.fishOverlap)}** | ${pct(r.before.bandOverlap)} → **${pct(r.after.bandOverlap)}** |`);
     }
     L.push('');
-    L.push('꾸준형 200일(물고기 8마리)은 헤엄 공간보다 물고기 키 합이 커서 겹침이 남아요. 물고기 수·크기 상한(엔진, H8)은 후속 과제예요.');
+    L.push('꾸준형 200일(물고기 8마리)은 헤엄 공간보다 물고기 키 합이 커서 헤엄 띠 겹침이 60%대로 남아요. 물고기 수·크기 상한(엔진, H8)은 후속 실험 과제예요.');
     L.push('');
   }
   L.push('## 9. 후속 실험 과제 (이번 PR에서는 엔진 수치를 바꾸지 않음)');

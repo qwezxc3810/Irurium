@@ -26,6 +26,18 @@ describe('화면 표시 규칙', () => {
     expect([...fishLaneLayout(st.objects, assets)]).toEqual([...fishLaneLayout(st.objects, assets)]);
   });
 
+  it('새 물고기가 생겨도 기존 물고기의 헤엄 높이는 바뀌지 않는다', () => {
+    const suite = runSuite();
+    const r = suite.runs['long-steady']![0]!;
+    const st = r.frames[r.frames.length - 1]!.state;
+    const fish = st.objects.filter((o) => o.kind === 'fish').sort((a, b) => a.bornSeq - b.bornSeq);
+    const newest = fish[fish.length - 1]!;
+    const without = st.objects.filter((o) => o.id !== newest.id);
+    const a = fishLaneLayout(without, assets);
+    const b = fishLaneLayout(st.objects, assets);
+    for (const [id, y] of a) expect(b.get(id), id).toBe(y);
+  });
+
   it('엔진 계산은 그대로다(골든 해시)', () => {
     expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe('897f99bd:a2f000ff');
   });
