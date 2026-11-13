@@ -12,11 +12,13 @@ interface Props {
   options: RenderOptions;
   /** 처음 만들 때만 쓰인다. 바꾸려면 key를 바꿔 다시 만든다. */
   assetOverrides?: AssetOverrides;
+  /** 이전 조명 방식(덧칠)으로 그리기 — 검증실 비교용 */
+  legacyLighting?: boolean;
   label?: string;
 }
 
 /** PixiJS 렌더러를 React에 붙이는 얇은 껍데기. 상태는 props로만 받는다. */
-export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, label = '내 어항' }, ref) {
+export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, legacyLighting, label = '내 어항' }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const renderer = useRef<AquariumRenderer | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
@@ -28,7 +30,7 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
     const r = new AquariumRenderer();
     renderer.current = r;
     r.setState(state, options);
-    r.init(host.current, { overrides: assetOverrides })
+    r.init(host.current, { overrides: assetOverrides, legacyLighting })
       .then((m) => { setMissing(m); setLoading(false); })
       .catch((e: unknown) => { setError(String(e)); setLoading(false); });
     return () => {
