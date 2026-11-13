@@ -29,6 +29,16 @@ function makeConfig(s: Settings, startDate: string): TankConfig {
   };
 }
 
+/** 지금 어항의 기록을 검증실(lab.html)로 넘긴다. 같은 브라우저 저장소에 복사본만 둔다. */
+function sendToLab(s: TankSession) {
+  try {
+    window.localStorage.setItem('irurium.lab.import', JSON.stringify(s.toJSON()));
+  } catch {
+    // 저장소를 쓸 수 없으면 검증실에서 붙여넣기로 가져온다
+  }
+  window.location.href = './lab.html#user';
+}
+
 export function App() {
   const [settings, setSettings] = useState<Settings>({ goalType: 'amount', total: 140, daily: 10, seedText: 'little-prince-7f3a' });
   const [now, setNow] = useState(START_NOW);
@@ -117,7 +127,8 @@ export function App() {
     let i = 0;
     demoTimer.current = window.setInterval(() => {
       const e = list[i];
-      if (!e) return stopDemo();
+      // 재생 중에 마무리·완성으로 어항이 닫히면 재생을 멈춘다(닫힌 어항에는 기록할 수 없음)
+      if (!e || session.current.lifecycle !== 'active') return stopDemo();
       const at = Date.parse(`${e.localDate}T12:00:00Z`) + i * 60_000;
       setNow(at);
       save(e, at);
@@ -284,6 +295,11 @@ export function App() {
               <button onClick={checkReplay}>재현성 확인</button>
             </div>
             {replayResult && <p className="hint">{replayResult}</p>}
+            <div className="row" style={{ marginTop: 8 }}>
+              <button onClick={() => sendToLab(s)}>검증실로 보내기</button>
+              <a className="hint" href="./lab.html">생성 엔진 검증실 열기 →</a>
+            </div>
+            <p className="hint">검증실로 보내면 지금 어항의 기록이 이 브라우저에 복사되고, 검증실에서 읽기 전용으로 열려요(원본 어항은 그대로).</p>
             <p className={invariantErrors.length ? 'warn' : 'hint'}>불변 규칙 검사: {invariantErrors.length ? invariantErrors.join(' / ') : '통과'}</p>
           </div>
 

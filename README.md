@@ -17,7 +17,12 @@ npm run dev        # 개발 서버 → http://localhost:5173
 npm test           # 엔진 단위 테스트(Vitest)
 npm run build      # 타입 검사 + 배포용 빌드(dist/)
 npm run preview    # 빌드 결과 미리보기
+npm run lab:report # 생성 엔진 검증 보고서 → docs/validation/REPORT.md
 ```
+
+- 어항 시뮬레이터: `http://localhost:5173/`
+- 생성 엔진 검증실: `http://localhost:5173/lab.html` — 사례 A~F, 비교 실험, 14~200일 장기, 가설 H1~H11 판정, 짝짓기 테스트. 자세한 내용은 [docs/VALIDATION.md](docs/VALIDATION.md)
+  - 검증실의 감정 구별은 **수치 기준**이에요(시각적 체감은 짝짓기 테스트 대기). 통과(자동 기준)도 확정이 아니라 지인 테스트로 넘어갈 수 있다는 뜻이에요.
 
 ## 화면에서 해 볼 수 있는 것
 
@@ -33,6 +38,7 @@ npm run preview    # 빌드 결과 미리보기
 | 마무리 | "지금까지로 마무리" | 그 시점 어항을 고정합니다 |
 | 데모 | "어린왕자 14일 재생" | 설계서의 14일 시뮬레이션을 1.4초 간격으로 재생합니다 |
 | 검증 | "재현성 확인", 불변 규칙 검사 | 같은 기록 → 같은 어항인지, I1~I4 규칙이 지켜지는지 |
+| 검증실로 보내기 | "데모 · 검증" 카드 | 지금 어항의 기록을 복사해 검증실 "실제 기록" 탭에서 읽기 전용으로 엽니다(원본 그대로) |
 
 ## 프로젝트 구조
 
@@ -59,10 +65,22 @@ src/
   ui/
     AquariumCanvas.tsx   렌더러를 React에 붙이는 컴포넌트
   App.tsx            시뮬레이터 화면(기록 폼, 시간, 기록 목록, 데모)
+  lab/               생성 엔진 검증실(실제 앱과 분리, lab.html 진입). 엔진·렌더러를 재사용만 함
+    samples.ts       샘플(가상 관장) 시나리오: 사례 A~F, 비교 실험, 장기 200일, 가설 실험
+    runner.ts        TankSession으로 날짜별 어항 생성, 규칙 검사, 재현성 검사
+    metrics.ts       개수·색감·성장 단계·어항 차이 지표
+    hypotheses.ts    H1~H11 판정(통과·조정 필요·보류)
+    userData.ts      실제 기록 읽기 전용 보기·무결성 확인
+    report.ts        마크다운 보고서
+    ui/              검증실 화면
+lab.html             검증실 진입점
+scripts/lab-report.ts  보고서 생성 스크립트
 public/assets/       그래픽 리소스(지금은 임시 SVG). manifest.json이 목록
 docs/
   ASSET_SPEC.md      그래픽 리소스 규격(ChatGPT로 만들 때 참고)
   AI_COLLABORATION.md  ChatGPT·Claude·기획자 협업 절차
+  VALIDATION.md      생성 엔진 검증실 사용법·원칙·지표 정의
+  validation/        검증 보고서(REPORT.md)와 갤러리 캡처
 ```
 
 ### 설계 원칙

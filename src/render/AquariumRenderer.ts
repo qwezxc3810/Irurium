@@ -62,19 +62,37 @@ export class AquariumRenderer {
   private assets!: LoadedAssets;
   private destroyed = false;
 
-  /** PixiJS를 시작하고 매니페스트의 그림을 불러온다. 불러오지 못한 파일 목록을 돌려준다. */
-  async init(host: HTMLElement): Promise<string[]> {
-    await this.app.init({
-      resizeTo: host,
-      backgroundAlpha: 0,
-      antialias: true,
-      autoDensity: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
-    });
+  private still = false;
+
+  /**
+   * PixiJS를 시작하고 매니페스트의 그림을 불러온다. 불러오지 못한 파일 목록을 돌려준다.
+   * still을 주면 화면에 붙이지 않고 고정 크기로 만들어, renderStill()로 정지 그림만 뽑는다(검증실 갤러리).
+   */
+  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number } } = {}): Promise<string[]> {
+    this.still = !!opts.still;
+    if (opts.still) {
+      await this.app.init({
+        width: opts.still.width,
+        height: opts.still.height,
+        background: '#0b1f33',
+        antialias: true,
+        resolution: 1,
+        autoStart: false,
+        preserveDrawingBuffer: true,
+      });
+    } else {
+      await this.app.init({
+        resizeTo: host!,
+        backgroundAlpha: 0,
+        antialias: true,
+        autoDensity: true,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+      });
+    }
     if (this.destroyed) { this.app.destroy(true); return []; }
     this.assets = await loadTextures(await loadManifest(), this.app.renderer);
     if (this.destroyed) { this.app.destroy(true); return []; }
-    host.appendChild(this.app.canvas);
+    if (host && !this.still) host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.world);
     for (const layer of Object.values(this.layers)) this.world.addChild(layer);
 
@@ -90,9 +108,11 @@ export class AquariumRenderer {
     const frame = new Graphics().roundRect(1, 1, WORLD.width - 2, WORLD.height - 2, 18).stroke({ width: 3, color: 0xffffff, alpha: 0.35 });
     this.layers.glass.addChild(frame);
 
-    this.app.renderer.on('resize', () => this.layout());
     this.layout();
-    this.app.ticker.add((t) => this.tick(Math.min(0.05, t.deltaMS / 1000)));
+    if (!this.still) {
+      this.app.renderer.on('resize', () => this.layout());
+      this.app.ticker.add((t) => this.tick(Math.min(0.05, t.deltaMS / 1000)));
+    }
     this.ready = true;
     if (this.state) {
       const st = this.state;
@@ -123,6 +143,30 @@ export class AquariumRenderer {
     this.drawLight(state);
     this.syncEffects(state.effects);
     if (!this.wipe) this.drawMoss(opts.mossStage);
+  }
+
+  /**
+   * 정지 그림 한 장(data URL). init({ still })로 만든 렌더러에서만 쓴다.
+   * 다른 어항의 오브젝트 id가 겹칠 수 있어 매번 오브젝트를 비우고 다시 그린다. 상태는 읽기만 한다.
+   */
+  renderStill(state: TankState, opts: Pick<RenderOptions, 'mossStage'>, type: 'image/jpeg' | 'image/png' = 'image/jpeg'): string {
+    if (!this.ready || !this.still) throw new Error('still_renderer_not_ready');
+    for (const f of this.fish.values()) f.destroy();
+    this.fish.clear();
+    for (const v of this.statics.values()) v.sprite.destroy();
+    this.statics.clear();
+    this.setState(state, { mossStage: opts.mossStage, reducedMotion: true });
+    for (const f of this.fish.values()) f.settle(state);
+    for (const v of this.statics.values()) {
+      v.scaleTween.finish();
+      v.alphaTween.finish();
+      v.sprite.alpha = 1;
+      v.sprite.scale.set(v.scaleTween.value);
+      v.sprite.skew.x = 0;
+    }
+    for (const sp of this.fxSprites.values()) sp.alpha = 0.8;
+    this.app.renderer.render(this.app.stage);
+    return this.app.canvas.toDataURL(type, 0.86);
   }
 
   /** 복귀 청소 연출(S10-1): 이끼를 왼쪽에서 오른쪽으로 닦아낸다. 약 1.6초. */

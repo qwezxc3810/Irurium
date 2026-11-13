@@ -116,6 +116,25 @@ export class FishView {
     this.root.y += (Math.max(BOUNDS.top, Math.min(BOUNDS.bottom, targetY)) - this.root.y) * Math.min(1, dt * 0.8);
   }
 
+  /**
+   * 정지 화면(검증실 갤러리)용 자세: 나타나는 연출을 끝내고, 감정 깊이를 반영한 높이에 몸을 살짝 휜 채로 둔다.
+   * 위치·방향·휜 모양은 오브젝트 id로 정해져서 같은 상태면 언제나 같은 그림이 나온다.
+   */
+  settle(state: TankState) {
+    this.scaleTween.finish();
+    this.alphaTween.finish();
+    this.root.alpha = 1;
+    this.applyScale();
+    this.flip.scale.x = this.dir;
+    const amp = (this.spec.swim ?? { amplitude: 0.1, frequency: 1 }).amplitude * this.length;
+    for (let i = 0; i < SEGMENTS; i++) {
+      const t = i / (SEGMENTS - 1);
+      this.points[i]!.y = amp * Math.pow(1 - t, 1.6) * Math.sin(this.phase - t * 3.2);
+    }
+    this.root.x = Math.max(BOUNDS.left, Math.min(BOUNDS.right, this.obj.x));
+    this.root.y = Math.max(BOUNDS.top, Math.min(BOUNDS.bottom, this.laneY - state.behavior.depth * 70));
+  }
+
   destroy() {
     this.root.destroy({ children: true });
   }
