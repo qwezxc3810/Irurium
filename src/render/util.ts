@@ -11,6 +11,10 @@ export class Tween {
     const e = 1 - Math.pow(1 - p, 3);
     return this.from + (this.to - this.from) * e;
   }
+  /** 정지 화면용: 끝 값으로 바로 보낸다 */
+  finish() {
+    this.t = this.duration;
+  }
   get done(): boolean {
     return this.t >= this.duration;
   }
