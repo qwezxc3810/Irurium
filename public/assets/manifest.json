@@ -41,36 +41,36 @@
       }
     },
     "plant.stem": {
-      "src": "plants/stem.svg",
-      "displayHeight": 220,
+      "src": "plants/stem.webp",
+      "displayHeight": 240,
       "sway": {
         "amplitude": 0.06,
         "frequency": 0.35
       }
     },
     "plant.leafy": {
-      "src": "plants/leafy.svg",
-      "displayHeight": 200,
+      "src": "plants/leafy.webp",
+      "displayHeight": 220,
       "sway": {
-        "amplitude": 0.05,
+        "amplitude": 0.04,
         "frequency": 0.3
       }
     },
     "plant.foxtail": {
-      "src": "plants/foxtail.svg",
-      "displayHeight": 210,
+      "src": "plants/foxtail.webp",
+      "displayHeight": 230,
       "sway": {
-        "amplitude": 0.07,
+        "amplitude": 0.05,
         "frequency": 0.4
       }
     },
     "rock.round": {
-      "src": "rocks/round.svg",
-      "displayWidth": 130
+      "src": "rocks/round.webp",
+      "displayWidth": 140
     },
     "rock.sharp": {
-      "src": "rocks/sharp.svg",
-      "displayWidth": 130
+      "src": "rocks/sharp.webp",
+      "displayWidth": 140
     },
     "symbol.rose-coral": {
       "src": "symbols/rose-coral.svg",
