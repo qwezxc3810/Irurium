@@ -7,6 +7,7 @@ import type { PlacedObject, TankState } from '../engine/types';
 import { applyOverrides, loadManifest, loadTextures, type AssetOverrides, type LoadedAssets } from '../assets/manifest';
 import { FishView } from './FishView';
 import { Tween, tintFor } from './util';
+import { DISPLAY, displayScale, fishLaneLayout, overlaps, type Box } from './display';
 
 /**
  * 어항 렌더러. 엔진의 TankState를 받아 그리기만 한다(상태를 바꾸지 않는다).
@@ -24,6 +25,8 @@ interface StaticView {
   sprite: Sprite;
   baseScale: number;
   scaleTween: Tween;
+  /** 앞쪽 수초: 물고기가 뒤를 지나면 옅어진다(이슈 #6) */
+  fade: number;
   alphaTween: Tween;
   swayPhase: number;
 }
@@ -157,16 +160,28 @@ export class AquariumRenderer {
     this.statics.clear();
     this.setState(state, { mossStage: opts.mossStage, reducedMotion: true });
     for (const f of this.fish.values()) f.settle(state);
+    const fishBoxes = [...this.fish.values()].map((f) => f.bounds());
     for (const v of this.statics.values()) {
       v.scaleTween.finish();
       v.alphaTween.finish();
-      v.sprite.alpha = 1;
       v.sprite.scale.set(v.scaleTween.value);
       v.sprite.skew.x = 0;
+      v.fade = this.frontFadeTarget(v, fishBoxes);
+      v.sprite.alpha = v.fade;
     }
     for (const sp of this.fxSprites.values()) sp.alpha = 0.8;
     this.app.renderer.render(this.app.stage);
     return this.app.canvas.toDataURL(type, 0.86);
+  }
+
+  /** 앞쪽 수초 뒤로 물고기가 지나가면 옅게(이슈 #6). 나머지는 항상 1 */
+  private frontFadeTarget(v: StaticView, fishBoxes: Box[]): number {
+    if (v.obj.kind !== 'plant' || v.obj.layer !== 'front') return 1;
+    const s = v.sprite;
+    const w = Math.abs(s.width);
+    const h = Math.abs(s.height);
+    const box: Box = { x0: s.x - w / 2, x1: s.x + w / 2, y0: s.y - h, y1: s.y };
+    return fishBoxes.some((f) => overlaps(f, box)) ? DISPLAY.frontPlantFadeAlpha : 1;
   }
 
   /** 복귀 청소 연출(S10-1): 이끼를 왼쪽에서 오른쪽으로 닦아낸다. 약 1.6초. */
@@ -201,15 +216,16 @@ export class AquariumRenderer {
     for (const [id, f] of this.fish) if (!ids.has(id)) { f.destroy(); this.fish.delete(id); }
     for (const [id, v] of this.statics) if (!ids.has(id)) { v.sprite.destroy(); this.statics.delete(id); }
 
+    const lanes = fishLaneLayout(objects, this.assets.manifest.elements);
     for (const obj of objects) {
       const spec = this.assets.manifest.elements[obj.el];
       const texture = this.tex(obj.el);
       if (!spec || !texture) continue;
       if (obj.kind === 'fish') {
         const existing = this.fish.get(obj.id);
-        if (existing) existing.update(obj);
+        if (existing) existing.update(obj, lanes.get(obj.id));
         else {
-          const f = new FishView(obj, texture, spec);
+          const f = new FishView(obj, texture, spec, lanes.get(obj.id));
           this.fish.set(obj.id, f);
           this.layers.mid.addChild(f.root);
         }
@@ -218,7 +234,7 @@ export class AquariumRenderer {
       const v = this.statics.get(obj.id);
       const base = spec.displayHeight ? spec.displayHeight / texture.height : (spec.displayWidth ?? 100) / texture.width;
       if (v) {
-        if (v.obj.scale !== obj.scale) v.scaleTween = new Tween(v.scaleTween.value, base * obj.scale, 1.0);
+        if (v.obj.scale !== obj.scale) v.scaleTween = new Tween(v.scaleTween.value, base * displayScale(obj), 1.0);
         v.sprite.tint = tintFor(obj.tint);
         v.obj = obj;
         continue;
@@ -233,8 +249,8 @@ export class AquariumRenderer {
       // 같은 층 안에서는 아래쪽(y가 큰) 것이 앞에 오게
       layer.children.sort((a, b) => a.y - b.y);
       this.statics.set(obj.id, {
-        obj, sprite, baseScale: base,
-        scaleTween: new Tween(base * obj.scale * 0.6, base * obj.scale, 1.2),
+        obj, sprite, baseScale: base, fade: 1,
+        scaleTween: new Tween(base * displayScale(obj) * 0.6, base * displayScale(obj), 1.2),
         alphaTween: new Tween(0, 1, 1.2),
         swayPhase: mulberry32(seedFromString(obj.id))() * Math.PI * 2,
       });
@@ -295,10 +311,13 @@ export class AquariumRenderer {
     this.time += dt;
     const rm = this.opts.reducedMotion;
     for (const f of this.fish.values()) f.tick(dt, this.state, rm);
+    const fishBoxes = [...this.fish.values()].map((f) => f.bounds());
     for (const v of this.statics.values()) {
       v.scaleTween.step(dt);
       v.alphaTween.step(dt);
-      v.sprite.alpha = v.alphaTween.value;
+      const target = this.frontFadeTarget(v, fishBoxes);
+      v.fade += (target - v.fade) * Math.min(1, dt * 4);
+      v.sprite.alpha = v.alphaTween.value * v.fade;
       v.sprite.scale.set(v.scaleTween.value);
       const sway = this.assets.manifest.elements[v.obj.el]?.sway;
       v.sprite.skew.x = sway && !rm ? sway.amplitude * Math.sin(this.time * sway.frequency * Math.PI * 2 + v.swayPhase) : 0;

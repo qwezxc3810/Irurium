@@ -5,9 +5,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { buildReport } from '../src/lab/report';
 import { runSuite } from '../src/lab/runner';
+import manifest from '../public/assets/manifest.json';
 
 const suite = runSuite();
-const md = buildReport(suite, { determinism: true });
+const md = buildReport(suite, { determinism: true, assets: manifest.elements as never });
 mkdirSync('docs/validation', { recursive: true });
 writeFileSync('docs/validation/REPORT.md', md + '\n');
 console.log(`docs/validation/REPORT.md 작성 (시나리오 ${suite.scenarios.length}개, ${suite.ms}ms)`);

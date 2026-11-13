@@ -17,6 +17,8 @@ export interface ElementAsset {
   displayHeight?: number;
   swim?: SwimSpec;
   sway?: SwaySpec;
+  /** 그림 원본 픽셀 크기 [가로, 세로]. 그림을 불러오지 않고 화면 차지 영역을 잴 때(검증실 가림 지표) 쓴다. */
+  size?: [number, number];
 }
 
 export interface AssetManifest {

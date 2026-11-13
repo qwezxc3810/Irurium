@@ -3,6 +3,7 @@ import { mulberry32, seedFromString, type Rng } from '../engine/random';
 import type { PlacedObject, TankState } from '../engine/types';
 import type { ElementAsset } from '../assets/manifest';
 import { Tween, tintFor, turnScale } from './util';
+import { displayScale, type Box } from './display';
 
 /**
  * 물고기 한 마리. 통짜 옆모습 이미지 한 장을 MeshRope에 입혀 몸통과 꼬리를 휘게 한다.
@@ -29,7 +30,8 @@ export class FishView {
   private alphaTween = new Tween(0, 1, 1.2);
   laneY: number;
 
-  constructor(public obj: PlacedObject, texture: Texture, private spec: ElementAsset) {
+  /** laneY: 화면용 헤엄 높이(fishLaneLayout). 없으면 엔진 레인 그대로 */
+  constructor(public obj: PlacedObject, texture: Texture, private spec: ElementAsset, laneY?: number) {
     this.length = texture.width;
     for (let i = 0; i < SEGMENTS; i++) this.points.push(new Point((i / (SEGMENTS - 1) - 0.5) * this.length, 0));
     this.rope = new MeshRope({ texture, points: this.points });
@@ -41,20 +43,20 @@ export class FishView {
     this.dir = this.rng() < 0.5 ? 1 : -1;
     this.nextTurnIn = 4 + this.rng() * 8;
     this.baseSpeed = 28 + this.rng() * 22;
-    this.laneY = obj.y;
-    this.root.position.set(obj.x, obj.y);
+    this.laneY = laneY ?? obj.y;
+    this.root.position.set(obj.x, this.laneY);
     const unit = (spec.displayWidth ?? 100) / this.length;
-    this.scaleTween = new Tween(unit * obj.scale * 0.6, unit * obj.scale, 1.2);
+    this.scaleTween = new Tween(unit * displayScale(obj) * 0.6, unit * displayScale(obj), 1.2);
     this.applyScale();
     this.root.alpha = 0;
     this.rope.tint = tintFor(obj.tint);
   }
 
-  update(next: PlacedObject) {
+  update(next: PlacedObject, laneY?: number) {
     const unit = (this.spec.displayWidth ?? 100) / this.length;
-    if (next.scale !== this.obj.scale) this.scaleTween = new Tween(this.scaleTween.value, unit * next.scale, 1.0);
+    if (next.scale !== this.obj.scale) this.scaleTween = new Tween(this.scaleTween.value, unit * displayScale(next), 1.0);
     this.rope.tint = tintFor(next.tint);
-    this.laneY = next.y;
+    this.laneY = laneY ?? next.y;
     this.obj = next;
   }
 
@@ -133,6 +135,13 @@ export class FishView {
     }
     this.root.x = Math.max(BOUNDS.left, Math.min(BOUNDS.right, this.obj.x));
     this.root.y = Math.max(BOUNDS.top, Math.min(BOUNDS.bottom, this.laneY - state.behavior.depth * 70));
+  }
+
+  /** 지금 화면에서 차지하는 상자(논리 좌표). 앞쪽 수초 투명 처리에 쓴다. */
+  bounds(): Box {
+    const w = this.length * Math.abs(this.root.scale.x);
+    const h = this.rope.texture.height * Math.abs(this.root.scale.y);
+    return { x0: this.root.x - w / 2, x1: this.root.x + w / 2, y0: this.root.y - h / 2, y1: this.root.y + h / 2 };
   }
 
   destroy() {

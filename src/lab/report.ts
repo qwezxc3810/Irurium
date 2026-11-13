@@ -4,6 +4,8 @@ import { fmt, LIFECYCLE_LABEL } from './metrics';
 import { checkDeterminism, frameAt, type SuiteResult } from './runner';
 import { LONG_CHECKPOINTS, LONG_DURATIONS } from './samples';
 import type { DayFrame, RunResult } from './types';
+import type { ElementAsset } from '../assets/manifest';
+import { OCCLUSION_TARGET, occlusionRows, pct } from './occlusion';
 
 /**
  * 검증 결과를 마크다운으로. 브라우저(검증실 "보고서 복사")와 `npm run lab:report`가 같은 함수를 쓴다.
@@ -30,7 +32,7 @@ function dailyTable(r: RunResult, days: number[]): string {
   return `| 일 | 기록 | 물/초/석/상 | 단계 | 물빛 | 이끼 | 그날 사건 |\n|---|---|---|---|---|---|---|\n${rows.join('\n')}`;
 }
 
-export function buildReport(s: SuiteResult, opts: { determinism?: boolean } = {}): string {
+export function buildReport(s: SuiteResult, opts: { determinism?: boolean; assets?: Record<string, ElementAsset> } = {}): string {
   const L: string[] = [];
   const hyps = evaluateHypotheses(s);
   const dist = distinctness(s);
@@ -155,7 +157,23 @@ export function buildReport(s: SuiteResult, opts: { determinism?: boolean } = {}
     L.push(`| ${id} ${rs[0]!.name} | ${rs.length} | ${okN}/${rs.length} | 사례 F: ${sample.detail} |`);
   }
   L.push('');
-  L.push('## 8. 후속 실험 과제 (이번 PR에서는 엔진 수치를 바꾸지 않음)');
+  if (opts.assets) {
+    L.push('## 8. 물고기 가림 (이슈 #6) — 화면 표시 규칙 비교');
+    L.push('');
+    L.push(`엔진 상태는 같고 표시 규칙만 비교해요(src/render/display.ts). 기준 [검증용 가설, 사용자 검증 전]: 실제 가림 ${pct(OCCLUSION_TARGET.effectiveCover)} 미만, 수초 꼭대기 y ${OCCLUSION_TARGET.plantTopMin} 아래.`);
+    L.push('');
+    L.push('**샘플 시작 위치 기반 근사값이에요.** 0%는 "샘플 어항의 시작 위치에서 사각형끼리 겹치지 않는다"는 뜻이에요. 헤엄 중 위치, 수초 흔들림, 투명한 픽셀 모양은 반영하지 않아서 실제 화면에서 순간적인 가림은 생길 수 있어요. 움직이는 화면(검증실 갤러리에서 그림을 눌러 열기)으로 함께 확인해 주세요.');
+    L.push('');
+    L.push('| 어항 | 물고기 | 앞 수초에 가림 (이전 → 지금·실제) | 수초 꼭대기 y | 물고기끼리 겹침 | 헤엄 띠 겹침 |');
+    L.push('|---|---|---|---|---|---|');
+    for (const r of occlusionRows(s, opts.assets)) {
+      L.push(`| ${r.label} | ${r.after.fish} | ${pct(r.before.frontCover)} → **${pct(r.after.effectiveCover)}** | ${Math.round(r.before.plantTop)} → **${Math.round(r.after.plantTop)}** | ${pct(r.before.fishOverlap)} → **${pct(r.after.fishOverlap)}** | ${pct(r.before.bandOverlap)} → **${pct(r.after.bandOverlap)}** |`);
+    }
+    L.push('');
+    L.push('꾸준형 200일(물고기 8마리)은 헤엄 공간보다 물고기 키 합이 커서 헤엄 띠 겹침이 60%대로 남아요. 물고기 수·크기 상한(엔진, H8)은 후속 실험 과제예요.');
+    L.push('');
+  }
+  L.push('## 9. 후속 실험 과제 (이번 PR에서는 엔진 수치를 바꾸지 않음)');
   L.push('');
   L.push('v0.3.1 6.3 절차대로 한 번에 하나만 바꾸고, 바꾸면 `ENGINE_VERSION`을 올린다. 그 전 스냅샷은 바꾸지 않는다.');
   L.push('');
