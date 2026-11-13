@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { AquariumRenderer, type RenderOptions } from '../render/AquariumRenderer';
 import type { TankState } from '../engine/types';
+import type { AssetOverrides } from '../assets/manifest';
 
 export interface AquariumCanvasHandle {
   playCleaning(): void;
@@ -9,10 +10,13 @@ export interface AquariumCanvasHandle {
 interface Props {
   state: TankState;
   options: RenderOptions;
+  /** 처음 만들 때만 쓰인다. 바꾸려면 key를 바꿔 다시 만든다. */
+  assetOverrides?: AssetOverrides;
+  label?: string;
 }
 
 /** PixiJS 렌더러를 React에 붙이는 얇은 껍데기. 상태는 props로만 받는다. */
-export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options }, ref) {
+export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, label = '내 어항' }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const renderer = useRef<AquariumRenderer | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
@@ -24,7 +28,7 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
     const r = new AquariumRenderer();
     renderer.current = r;
     r.setState(state, options);
-    r.init(host.current)
+    r.init(host.current, { overrides: assetOverrides })
       .then((m) => { setMissing(m); setLoading(false); })
       .catch((e: unknown) => { setError(String(e)); setLoading(false); });
     return () => {
@@ -44,7 +48,7 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
   return (
     <div className="aquarium-wrap">
       <div className="aquarium-box">
-        <div ref={host} className="aquarium" role="img" aria-label="내 어항" />
+        <div ref={host} className="aquarium" role="img" aria-label={label} />
         {loading && <div className="aquarium-loading">어항을 준비하고 있어요…</div>}
       </div>
       {error && <p className="warn">어항을 그리지 못했어요: {error}</p>}

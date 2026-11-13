@@ -121,3 +121,6 @@ table.matrix td { text-align: center; }
   .chart svg { min-width: 560px; }
   .tooltip { display: none; }
 }
+
+.style-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+.style-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; }

@@ -4,7 +4,7 @@ import { Application, Container, Graphics, Sprite, type Texture } from 'pixi.js'
 import { WORLD } from '../engine/config';
 import { mulberry32, seedFromString } from '../engine/random';
 import type { PlacedObject, TankState } from '../engine/types';
-import { loadManifest, loadTextures, type LoadedAssets } from '../assets/manifest';
+import { applyOverrides, loadManifest, loadTextures, type AssetOverrides, type LoadedAssets } from '../assets/manifest';
 import { FishView } from './FishView';
 import { Tween, tintFor } from './util';
 
@@ -68,7 +68,7 @@ export class AquariumRenderer {
    * PixiJS를 시작하고 매니페스트의 그림을 불러온다. 불러오지 못한 파일 목록을 돌려준다.
    * still을 주면 화면에 붙이지 않고 고정 크기로 만들어, renderStill()로 정지 그림만 뽑는다(검증실 갤러리).
    */
-  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number } } = {}): Promise<string[]> {
+  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number }; overrides?: AssetOverrides } = {}): Promise<string[]> {
     this.still = !!opts.still;
     if (opts.still) {
       await this.app.init({
@@ -90,7 +90,7 @@ export class AquariumRenderer {
       });
     }
     if (this.destroyed) { this.app.destroy(true); return []; }
-    this.assets = await loadTextures(await loadManifest(), this.app.renderer);
+    this.assets = await loadTextures(applyOverrides(await loadManifest(), opts.overrides), this.app.renderer);
     if (this.destroyed) { this.app.destroy(true); return []; }
     if (host && !this.still) host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.world);

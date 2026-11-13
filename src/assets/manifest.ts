@@ -26,6 +26,19 @@ export interface AssetManifest {
   fx: Record<string, string>;
 }
 
+/** 요소별 매니페스트 덮어쓰기. 검증실의 그래픽 비교처럼 manifest.json을 바꾸지 않고 다른 그림을 시험할 때 쓴다. */
+export type AssetOverrides = Record<string, Partial<ElementAsset>>;
+
+export function applyOverrides(manifest: AssetManifest, overrides?: AssetOverrides): AssetManifest {
+  if (!overrides) return manifest;
+  const elements = { ...manifest.elements };
+  for (const [id, o] of Object.entries(overrides)) {
+    const base = elements[id];
+    if (base) elements[id] = { ...base, ...o };
+  }
+  return { ...manifest, elements };
+}
+
 export interface LoadedAssets {
   manifest: AssetManifest;
   textures: Map<string, Texture>;
