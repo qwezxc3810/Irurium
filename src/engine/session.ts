@@ -4,7 +4,7 @@ import { maxDate } from './dates';
 import { computeMoss, setRestDays, type MossResult } from './moss';
 import { hashOf } from './random';
 import type {
-  ConfirmReason, EngineInput, Entry, EntryRevision, ISODate, Lifecycle, RestRule, Snapshot, TankConfig,
+  ConfirmReason, EngineInput, EngineOutput, Entry, EntryRevision, ISODate, Lifecycle, RestRule, Snapshot, TankConfig, TankState,
 } from './types';
 
 /**
@@ -14,9 +14,13 @@ import type {
  * 불변 규칙
  *  I1 미확정 스냅샷은 최대 1개, 삭제되지 않은 가장 마지막 기록의 것
  *  I2 스냅샷 n = computeSnapshot(직전 확정 스냅샷, 기록 n)
- *  I3 확정 스냅샷은 다시 계산하지 않는다
+ *  I3 확정 스냅샷은 다시 계산하지 않는다(만든 뒤 내용이 바뀌지 않는다)
  *  I4 기록의 localDate는 줄어들지 않는다
  */
+
+function contentHashOf(o: Pick<EngineOutput, 'state' | 'ledger' | 'changes'>): string {
+  return hashOf({ state: o.state, ledger: o.ledger, changes: o.changes });
+}
 
 export interface NewEntry {
   clientId: string;
@@ -55,7 +59,8 @@ export class TankSession {
     const g = genesisState(cfg);
     const genesis: Snapshot = {
       id: 's0', seq: 0, entryId: null, baseId: null, kind: 'genesis', state: g.state, ledger: g.ledger, changes: [],
-      engineVersion: ENGINE_VERSION, inputHash: hashOf({ cfg }), status: 'confirmed', confirmDueAt: null, confirmedAt: 0, confirmReason: 'genesis',
+      engineVersion: ENGINE_VERSION, inputHash: hashOf({ cfg }), input: null, cfg, contentHash: contentHashOf({ ...g, changes: [] }),
+      status: 'confirmed', confirmDueAt: null, confirmedAt: 0, confirmReason: 'genesis',
     };
     this.d = {
       cfg, lifecycle: 'active', entries: [], snapshots: [genesis], revisions: [],
@@ -88,8 +93,15 @@ export class TankSession {
     return this.d.entries.filter((e) => !e.deletedAt).reduce((m, e) => Math.max(m, e.progressValue ?? 0), 0);
   }
 
+  /**
+   * 이끼·쉬는 중 계산의 기준일(v0.3.2 보완서 4.3).
+   * 확정 후 숨긴 기록(hidden)은 활동한 사실이 있으므로 포함한다. 지웠다고 이끼가 갑자기 생기지 않게 하려는 것.
+   * 미확정 상태에서 지운 기록(discarded)은 실수 입력으로 보고 제외한다.
+   */
   lastActivityDate(): ISODate {
-    return this.d.entries.reduce<ISODate>((m, e) => maxDate(m, e.localDate), this.d.cfg.startDate);
+    return this.d.entries
+      .filter((e) => e.deleteMode !== 'discarded')
+      .reduce<ISODate>((m, e) => maxDate(m, e.localDate), this.d.cfg.startDate);
   }
 
   moss(today: ISODate): MossResult {
@@ -135,7 +147,7 @@ export class TankSession {
     const seq = this.d.entries.length + 1;
     const entry: Entry = {
       id: `e${seq}`, clientId: req.clientId, seq, localDate, amount: Math.max(0, req.amount), progressValue: req.progressValue,
-      moodChips: [...req.moodChips], note: req.note, createdAt: now, rev: 1, deletedAt: null,
+      moodChips: [...req.moodChips], note: req.note, createdAt: now, rev: 1, deletedAt: null, deleteMode: null,
     };
     this.d.entries.push(entry);
     const snap = this.computeDraft(entry, head);
@@ -148,11 +160,14 @@ export class TankSession {
   }
 
   private computeDraft(entry: Entry, base: Snapshot): Snapshot {
-    const out = computeSnapshot(base, toInput(entry), this.d.cfg);
+    const input = toInput(entry);
+    const cfg = this.d.cfg;
+    const out = computeSnapshot(base, input, cfg);
     return {
       id: `s${entry.seq}-r${entry.rev}`, seq: entry.seq, entryId: entry.id, baseId: base.id, kind: 'entry',
       state: out.state, ledger: out.ledger, changes: out.changes, engineVersion: ENGINE_VERSION,
-      inputHash: hashOf({ base: base.inputHash, input: toInput(entry), v: ENGINE_VERSION }),
+      inputHash: hashOf({ base: base.inputHash, input, v: ENGINE_VERSION }),
+      input: JSON.parse(JSON.stringify(input)) as EngineInput, cfg, contentHash: contentHashOf(out),
       status: 'draft', confirmDueAt: null, confirmedAt: null, confirmReason: null,
     };
   }
@@ -197,11 +212,13 @@ export class TankSession {
     const snap = this.snapshotOfEntry(id);
     entry.deletedAt = now;
     if (snap && snap.status === 'draft') {
+      entry.deleteMode = 'discarded';
       this.d.snapshots = this.d.snapshots.filter((s) => s.id !== snap.id);
       this.d.headId = snap.baseId!;
       this.d.completionPrompt = false;
       return { mode: 'discarded' };
     }
+    entry.deleteMode = 'hidden';
     return { mode: 'hidden' };
   }
 
@@ -216,6 +233,7 @@ export class TankSession {
       const s: Snapshot = {
         id: `s${head.seq}-finale`, seq: head.seq, entryId: null, baseId: head.id, kind: 'finale', state: out.state, ledger: out.ledger,
         changes: out.changes, engineVersion: ENGINE_VERSION, inputHash: hashOf({ base: head.inputHash, finale: true, v: ENGINE_VERSION }),
+        input: null, cfg: this.d.cfg, contentHash: contentHashOf(out),
         status: 'confirmed', confirmDueAt: null, confirmedAt: now, confirmReason: 'finalized',
       };
       this.d.snapshots.push(s);
@@ -247,8 +265,15 @@ export class TankSession {
   }
 
   // ───────── 검사 ─────────
-  checkInvariants(): string[] {
+  /**
+   * 불변 규칙 I1~I4 검사. 위반 내용을 문자열 목록으로 돌려준다(비어 있으면 통과).
+   * deep=true면 모든 스냅샷을 저장된 입력으로 다시 계산해 결과가 같은지(I2) 확인한다. 기록 수에 비례해 느려지므로
+   * 화면에서 매번 부를 때는 deep=false, 테스트·재현성 확인 버튼에서는 deep=true.
+   */
+  checkInvariants(opts: { deep?: boolean } = {}): string[] {
+    const deep = opts.deep ?? true;
     const errors: string[] = [];
+    // I1
     const drafts = this.d.snapshots.filter((s) => s.status === 'draft');
     if (drafts.length > 1) errors.push('I1: 미확정 스냅샷이 2개 이상');
     const live = this.d.entries.filter((e) => !e.deletedAt);
@@ -256,15 +281,38 @@ export class TankSession {
     if (drafts[0] && drafts[0].entryId !== lastLive?.id) errors.push('I1: 미확정 스냅샷이 마지막 기록의 것이 아님');
     if (drafts[0] && this.d.headId !== drafts[0].id) errors.push('I1: 미확정 스냅샷이 머리가 아님');
     for (const s of this.d.snapshots) {
+      // I2: 기준은 항상 확정본
       if (s.baseId && this.snap(s.baseId).status !== 'confirmed') errors.push(`I2: ${s.id}의 기준이 확정본이 아님`);
+      // I3: 만든 뒤 내용이 바뀌지 않았는지
+      if (contentHashOf(s) !== s.contentHash) errors.push(`I3: ${s.id}의 내용이 만든 뒤 바뀜`);
+      // I2: 저장된 입력으로 다시 계산하면 같은 결과
+      if (deep && s.baseId) {
+        const base = this.snap(s.baseId);
+        const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq) : s.input ? computeSnapshot(base, s.input, s.cfg) : null;
+        if (!again) errors.push(`I2: ${s.id}에 계산 입력이 없음`);
+        else if (contentHashOf(again) !== s.contentHash) errors.push(`I2: ${s.id}를 다시 계산하면 결과가 다름`);
+      }
     }
+    // I4
     for (let i = 1; i < this.d.entries.length; i++) {
       if (this.d.entries[i]!.localDate < this.d.entries[i - 1]!.localDate) errors.push('I4: localDate 감소');
     }
     return errors;
   }
 
-  /** 같은 기록(현재 값 아닌 저장 당시 값)을 새 세션에 다시 넣었을 때의 머리 해시. 재현성 확인용. */
+  /** 같은 기록을 새 세션에 넣었을 때의 어항 상태. 시드·배치 비교 테스트용. */
+  static replayState(cfg: TankConfig, inputs: NewEntry[]): TankState {
+    const s = new TankSession(cfg);
+    let t = 0;
+    for (const i of inputs) s.addEntry(i, (t += 1000));
+    return s.head.state;
+  }
+
+  /**
+   * 같은 기록을 새 세션에 다시 넣었을 때의 머리 해시(기록 체인 해시 + 상태 해시).
+   * 어항 설정(시드 포함)도 해시에 들어가므로 "같은 설정·같은 기록 → 같은 결과" 확인에만 쓴다.
+   * 시드별 배치 차이를 비교할 때는 replayState()로 상태만 비교한다.
+   */
   static replay(cfg: TankConfig, inputs: NewEntry[]): string {
     const s = new TankSession(cfg);
     let t = 0;

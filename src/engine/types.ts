@@ -129,6 +129,12 @@ export interface Snapshot {
   changes: Change[];
   engineVersion: string;
   inputHash: string;
+  /** 계산에 쓴 기록 입력(저장 당시 값). 확정 후 기록을 고쳐도 이 값은 그대로라서 I2 재현 검사에 쓴다. */
+  input: EngineInput | null;
+  /** 계산에 쓴 어항 설정(총 쪽수 수정 등으로 설정이 바뀌어도 과거 계산을 재현하기 위해). */
+  cfg: TankConfig;
+  /** state·ledger·changes의 해시. 만든 뒤 바뀌면 I3 위반. */
+  contentHash: string;
   status: 'draft' | 'confirmed';
   confirmDueAt: number | null;
   confirmedAt: number | null;
@@ -141,6 +147,11 @@ export interface Entry extends EngineInput {
   createdAt: number;
   rev: number;
   deletedAt: number | null;
+  /**
+   * discarded: 미확정 상태에서 지움(스냅샷도 폐기, 활동으로 치지 않음)
+   * hidden: 확정 후 지움(어항은 그대로, 활동 사실은 남음 → 이끼 기준에 포함)
+   */
+  deleteMode: 'discarded' | 'hidden' | null;
 }
 
 export interface EntryRevision {

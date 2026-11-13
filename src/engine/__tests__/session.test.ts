@@ -25,10 +25,27 @@ describe('재현성', () => {
     expect(a).toBe(b);
   });
 
-  it('시드가 다르면 배치가 달라진다', () => {
-    const a = TankSession.replay(littlePrinceConfig('2026-11-13', 'seed-a'), littlePrinceEntries());
-    const b = TankSession.replay(littlePrinceConfig('2026-11-13', 'seed-b'), littlePrinceEntries());
-    expect(a).not.toBe(b);
+  it('같은 설정·같은 기록이면 상태가 완전히 같다', () => {
+    const a = TankSession.replayState(littlePrinceConfig(), littlePrinceEntries());
+    const b = TankSession.replayState(littlePrinceConfig(), littlePrinceEntries());
+    expect(a).toEqual(b);
+  });
+
+  it('시드만 다르면 실제 배치(위치·종류)가 달라진다', () => {
+    // 해시가 아니라 어항 상태의 오브젝트를 직접 비교한다(설정 해시 차이로 통과하는 것을 막기 위해)
+    const layout = (seedText: string) =>
+      TankSession.replayState(littlePrinceConfig('2026-11-13', seedText), littlePrinceEntries())
+        .objects.map((o) => `${o.el}@${o.layer}:${o.x},${o.y}`);
+    const a = layout('seed-a');
+    const b = layout('seed-b');
+    expect(a.length).toBeGreaterThan(0);
+    expect(a).not.toEqual(b);
+  });
+
+  it('시드가 달라도 감정이 같으면 분위기(조명)는 같다', () => {
+    const a = TankSession.replayState(littlePrinceConfig('2026-11-13', 'seed-a'), littlePrinceEntries());
+    const b = TankSession.replayState(littlePrinceConfig('2026-11-13', 'seed-b'), littlePrinceEntries());
+    expect(a.light).toEqual(b.light);
   });
 });
 
@@ -167,8 +184,9 @@ describe('스냅샷 확정과 재계산', () => {
         else if (r < 0.75 && live.length) { const e = live[Math.floor(rng() * live.length)]!; s.editEntry(e.id, { moodChips: ['차분함'] }, e.rev, t); }
         else if (r < 0.85 && live.length) { const e = live[Math.floor(rng() * live.length)]!; s.deleteEntry(e.id, t); }
         else s.confirmIfDue(t);
-        expect(s.checkInvariants()).toEqual([]);
+        expect(s.checkInvariants({ deep: false })).toEqual([]);
       }
+      expect(s.checkInvariants({ deep: true })).toEqual([]);
     }
   });
 });
@@ -189,5 +207,76 @@ describe('개수 상한', () => {
     }
     expect(s.head.state.effects.length).toBeLessThanOrEqual(2);
     expect(Math.max(...objs.map((o) => o.scale))).toBeLessThanOrEqual(1.6);
+  });
+});
+
+describe('불변 규칙 검사(I2·I3)', () => {
+  function sessionWith(n: number) {
+    const s = new TankSession(littlePrinceConfig());
+    let t = T0;
+    for (const e of littlePrinceEntries().slice(0, n)) s.addEntry(e, (t += H));
+    return s;
+  }
+
+  it('정상 세션은 깊은 검사(다시 계산)까지 통과한다', () => {
+    const s = sessionWith(13);
+    s.answerCompletion('finished', T0 + 100 * H);
+    expect(s.checkInvariants({ deep: true })).toEqual([]);
+  });
+
+  it('확정된 스냅샷 내용이 바뀌면 I3 위반을 잡는다', () => {
+    const s = sessionWith(5);
+    const confirmed = s.snapshots.find((x) => x.seq === 2)!;
+    (confirmed.state.light as { temp: number }).temp = 0.99; // 의도적 변조
+    expect(s.checkInvariants().some((e) => e.startsWith('I3'))).toBe(true);
+  });
+
+  it('스냅샷을 다시 계산한 결과가 다르면 I2 위반을 잡는다', () => {
+    const s = sessionWith(5);
+    const snap = s.snapshots.find((x) => x.seq === 3)!;
+    snap.input!.moodChips = ['답답함']; // 저장된 입력만 바꿔 결과와 어긋나게 만든다
+    expect(s.checkInvariants({ deep: true }).some((e) => e.startsWith('I2'))).toBe(true);
+  });
+
+  it('확정 후 기록을 고쳐도 깊은 검사는 통과한다(스냅샷은 저장 당시 입력으로 재현)', () => {
+    const s = sessionWith(5);
+    const first = s.entries[0]!;
+    s.editEntry(first.id, { moodChips: ['답답함'], note: '바꾼 한마디' }, first.rev, T0 + 50 * H);
+    expect(s.checkInvariants({ deep: true })).toEqual([]);
+  });
+
+  it('총 쪽수를 고쳐도 과거 스냅샷은 당시 설정으로 재현된다', () => {
+    const s = sessionWith(13);
+    s.fixTotal(150, T0 + 50 * H);
+    expect(s.checkInvariants({ deep: true })).toEqual([]);
+  });
+});
+
+describe('삭제한 기록과 이끼 기준', () => {
+  it('확정 후 숨긴 기록은 활동으로 남아 이끼가 갑자기 생기지 않는다', () => {
+    const s = new TankSession(freeConfig());
+    s.addEntry(entry(1, '2026-11-13'), T0);
+    const last = s.addEntry(entry(2, '2026-11-20'), T0 + H);
+    s.confirmHead('user', T0 + 2 * H);
+    expect(s.deleteEntry(last.entry.id, T0 + 3 * H).mode).toBe('hidden');
+    expect(s.lastActivityDate()).toBe('2026-11-20');
+    expect(s.moss('2026-11-22').stage).toBe(0);
+  });
+
+  it('미확정 상태에서 지운 기록은 실수 입력으로 보고 활동에서 뺀다', () => {
+    const s = new TankSession(freeConfig());
+    s.addEntry(entry(1, '2026-11-13'), T0);
+    s.confirmHead('user', T0 + H);
+    const mistake = s.addEntry(entry(2, '2026-11-20'), T0 + 2 * H);
+    expect(s.deleteEntry(mistake.entry.id, T0 + 3 * H).mode).toBe('discarded');
+    expect(s.lastActivityDate()).toBe('2026-11-13');
+    expect(s.moss('2026-11-20').stage).toBe(1); // 11/14~11/19 6일 → 1단계
+  });
+
+  it('모든 기록을 지우면 기준은 어항 시작일', () => {
+    const s = new TankSession(freeConfig());
+    const a = s.addEntry(entry(1, '2026-11-15'), T0);
+    s.deleteEntry(a.entry.id, T0 + H);
+    expect(s.lastActivityDate()).toBe('2026-11-13');
   });
 });

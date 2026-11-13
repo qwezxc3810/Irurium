@@ -2,13 +2,14 @@ import { Container, MeshRope, Point, type Texture } from 'pixi.js';
 import { mulberry32, seedFromString, type Rng } from '../engine/random';
 import type { PlacedObject, TankState } from '../engine/types';
 import type { ElementAsset } from '../assets/manifest';
-import { Tween, tintFor } from './util';
+import { Tween, tintFor, turnScale } from './util';
 
 /**
  * 물고기 한 마리. 통짜 옆모습 이미지 한 장을 MeshRope에 입혀 몸통과 꼬리를 휘게 한다.
  * 이미지 규칙: 머리가 오른쪽, 투명 배경. 왼쪽 끝 = 꼬리, 오른쪽 끝 = 머리.
  */
 const SEGMENTS = 12;
+
 const BOUNDS = { left: 70, right: 930, top: 90, bottom: 450 };
 
 export class FishView {
@@ -83,11 +84,12 @@ export class FishView {
       this.points[i]!.y = amp * w * Math.sin(this.phase - t * 3.2);
     }
 
-    // 방향 전환: 좌우 반전 크기를 cos 곡선으로 줄였다 키워 몸을 돌리는 것처럼 보이게
+    // 방향 전환: 좌우 반전 크기를 cos 곡선으로 줄였다 키워 몸을 돌리는 것처럼 보이게.
+    // p=0에서 dir(지금 방향), p=1에서 -dir(새 방향)이 되어 시작·끝 모두 끊김 없이 이어진다.
     if (this.turning > 0) {
       this.turning += dt / 0.55;
       const p = Math.min(1, this.turning);
-      this.flip.scale.x = -this.dir * Math.cos(Math.PI * p);
+      this.flip.scale.x = turnScale(this.dir, p);
       if (p >= 1) {
         this.dir = this.dir === 1 ? -1 : 1;
         this.turning = 0;

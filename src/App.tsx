@@ -48,7 +48,7 @@ export function App() {
   const head = s.head;
   const moss = s.moss(today);
   const options = useMemo<RenderOptions>(() => ({ mossStage: moss.stage, reducedMotion }), [moss.stage, reducedMotion]);
-  const invariantErrors = s.checkInvariants();
+  const invariantErrors = s.checkInvariants({ deep: false });
 
   // ── 기록 폼 ──
   const [progress, setProgress] = useState('');
@@ -128,12 +128,14 @@ export function App() {
   // ── 재현성 확인 ──
   const [replayResult, setReplayResult] = useState<string | null>(null);
   const checkReplay = () => {
+    const deepErrors = s.checkInvariants({ deep: true });
+    if (deepErrors.length) return setReplayResult(`불변 규칙 위반: ${deepErrors.join(' / ')}`);
     const edited = s.revisions.length > 0 || s.entries.some((e) => e.deletedAt || e.rev > 1);
-    if (edited) return setReplayResult('수정·삭제한 기록이 있어 비교하지 않아요(수정은 원래 값과 다른 입력이므로).');
+    if (edited) return setReplayResult('모든 스냅샷을 저장된 입력으로 다시 계산해 봤고 결과가 같아요. 수정·삭제한 기록이 있어 처음부터 다시 넣는 비교는 하지 않았어요.');
     const replayed = TankSession.replay(s.cfg, inputLog.current);
     const current = s.snapshots.filter((x) => x.kind === 'entry').at(-1);
     const currentHash = current ? current.inputHash + ':' + hashOf(current.state) : '';
-    setReplayResult(replayed === currentHash || inputLog.current.length === 0 ? '같은 기록을 다시 넣었더니 같은 어항이 나왔어요.' : '결과가 달라요. 엔진 재현성 오류예요.');
+    setReplayResult(replayed === currentHash || inputLog.current.length === 0 ? '모든 스냅샷을 다시 계산해 봤고, 같은 기록을 처음부터 다시 넣어도 같은 어항이 나왔어요.' : '결과가 달라요. 엔진 재현성 오류예요.');
   };
 
   const draft = head.status === 'draft' ? head : null;

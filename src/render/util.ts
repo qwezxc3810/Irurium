@@ -24,3 +24,11 @@ export function tintFor(v: number): number {
   const b = Math.round(255 * (1 - Math.max(0, k)));
   return (r << 16) | (g << 8) | b;
 }
+
+/**
+ * 물고기 회전 진행률 p(0~1)에서의 좌우 크기.
+ * p=0 → dir(지금 방향), p=0.5 → 0(옆으로 선 순간), p=1 → -dir(새 방향). 시작과 끝에서 값이 튀지 않는다.
+ */
+export function turnScale(dir: 1 | -1, p: number): number {
+  return dir * Math.cos(Math.PI * Math.max(0, Math.min(1, p)));
+}
