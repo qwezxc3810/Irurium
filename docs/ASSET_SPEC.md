@@ -38,6 +38,11 @@
 
 ## 4. 폴더와 파일 이름
 
+원본과 앱용 파일을 나눠 관리합니다.
+
+- **원본** `art/originals/<종류>/<이름>.png`: 생성 도구에서 받은 투명 PNG 그대로(크기 조정·압축 안 함). 앱에 실리지 않고, 다시 다듬거나 크기를 바꿀 때 씁니다.
+- **앱용** `public/assets/<종류>/<이름>.webp`: 원본에서 여백 정리 후 가로 768px 안팎 WebP(물고기 약 100KB). manifest.json은 이 파일을 가리킵니다.
+
 ```
 public/assets/
   manifest.json
@@ -87,3 +92,12 @@ Photorealistic aquarium fish, [SPECIES], full body in exact side profile, head f
 ```
 
 세미 리얼(실사 느낌을 살린 일러스트) 방향이면 첫 줄을 `Semi-realistic 2D illustration of an aquarium fish`로 바꿉니다. 어떤 방향으로 갈지는 같은 어종을 두 스타일로 만들어 비교한 뒤 정합니다.
+
+## 6. 확정 스타일: 세미 리얼 (2026-11-13)
+
+- 기획자 결정으로 **세미 리얼**을 이루리움의 그래픽 스타일로 정했습니다. 앞으로 만드는 물고기·수초·수석·배경은 같은 화풍으로 맞춥니다.
+  - 실사 느낌(비늘·지느러미 결, 부드러운 수중 조명)은 유지하되 색을 조금 더 선명하게, 윤곽을 살짝 정리한 고급 모바일 게임 일러스트
+- 적용: `fish.goldfish` → `fish/goldfish-semi.webp` (displayWidth 180, swim 0.08 / 0.7). ChatGPT로 만든 류킨 금붕어, 원본 1774×887 투명 PNG → 여백 정리 후 768×433 WebP(약 100KB).
+- 비교용으로 `fish/goldfish-real.webp`(실사)와 `fish/goldfish.svg`(이전 임시)를 남겨 두고, 검증실 "그래픽 비교" 탭에서 볼 수 있습니다.
+- 지느러미가 긴 어종은 그림 폭에 지느러미가 포함되므로 `displayWidth`를 몸통 기준보다 크게(금붕어 약 180) 잡고, 휘는 정도(`swim.amplitude`)는 0.06~0.09가 자연스럽습니다.
+- 휴대폰 용량을 위해 물고기는 가로 768px 안팎 WebP를 권장합니다.

@@ -17,11 +17,11 @@
       }
     },
     "fish.goldfish": {
-      "src": "fish/goldfish.svg",
-      "displayWidth": 130,
+      "src": "fish/goldfish-semi.webp",
+      "displayWidth": 180,
       "swim": {
-        "amplitude": 0.12,
-        "frequency": 0.8
+        "amplitude": 0.08,
+        "frequency": 0.7
       }
     },
     "fish.bluefin": {
