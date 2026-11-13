@@ -22,6 +22,7 @@ npm run lab:report # 생성 엔진 검증 보고서 → docs/validation/REPORT.m
 
 - 어항 시뮬레이터: `http://localhost:5173/`
 - 생성 엔진 검증실: `http://localhost:5173/lab.html` — 사례 A~F, 비교 실험, 14~200일 장기, 가설 H1~H11 판정, 짝짓기 테스트. 자세한 내용은 [docs/VALIDATION.md](docs/VALIDATION.md)
+  - 검증실의 감정 구별은 **수치 기준**이에요(시각적 체감은 짝짓기 테스트 대기). 통과(자동 기준)도 확정이 아니라 지인 테스트로 넘어갈 수 있다는 뜻이에요.
 
 ## 화면에서 해 볼 수 있는 것
 

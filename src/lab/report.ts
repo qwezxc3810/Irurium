@@ -1,6 +1,6 @@
 import { ENGINE_VERSION } from '../engine/config';
 import { distinctness, evaluateHypotheses, h7Detail, VERDICT_LABEL } from './hypotheses';
-import { fmt } from './metrics';
+import { fmt, LIFECYCLE_LABEL } from './metrics';
 import { checkDeterminism, frameAt, type SuiteResult } from './runner';
 import { LONG_CHECKPOINTS, LONG_DURATIONS } from './samples';
 import type { DayFrame, RunResult } from './types';
@@ -17,7 +17,7 @@ function finalRow(r: RunResult): string {
   const f = r.frames[r.frames.length - 1]!;
   const g = r.events.filter((e) => e.level === 'growth').length;
   const sp = r.events.filter((e) => e.level === 'special');
-  return `| ${r.label} | ${r.entryCount} | ${counts(f)} | ${f.metrics.total} (${f.metrics.fillPct}%) | ${f.metrics.stage} ${f.metrics.stageName} | \`${f.metrics.waterHex}\` ${f.metrics.moodName} (${fmt(f.metrics.lightTemp)}, ${fmt(f.metrics.lightEnergy)}) | ${g} | ${sp.length} (${sp.map((e) => e.day).join(',')}) | ${f.lifecycle === 'completed' ? '완성' : '진행 중'} |`;
+  return `| ${r.label} | ${r.entryCount} | ${counts(f)} | ${f.metrics.total} (${f.metrics.fillPct}%) | ${f.metrics.stage} ${f.metrics.stageName} | \`${f.metrics.waterHex}\` ${f.metrics.moodName} (${fmt(f.metrics.lightTemp)}, ${fmt(f.metrics.lightEnergy)}) | ${g} | ${sp.length} (${sp.map((e) => e.day).join(',')}) | ${LIFECYCLE_LABEL[f.lifecycle]} |`;
 }
 
 const FINAL_HEAD = '| 어항 | 기록 수 | 물고기/수초/수석/상징 | 합계(채움) | 성장 단계 | 물빛 색감 (온도, 에너지) | 성장 | 특별 변화(일) | 상태 |\n|---|---|---|---|---|---|---|---|---|';
@@ -63,8 +63,9 @@ export function buildReport(s: SuiteResult, opts: { determinism?: boolean } = {}
     const bad = det.filter((d) => !d.same);
     L.push(`- 같은 기록·같은 시드 재실행: 어항 ${det.length}개 중 **${det.length - bad.length}개 모든 스냅샷 해시 동일**${bad.length ? ` (다름: ${bad.map((b) => b.key).join(', ')})` : ''}`);
   }
-  L.push(`- 감정만 다른 어항(같은 시드) 사이 최소 차이 **${fmt(dist.emotionMin, 3)}** (${dist.emotionMinPair}) > 시드만 다른 어항 사이 최대 차이 **${fmt(dist.seedMax, 3)}** → ${dist.ok ? '**충분히 다름**' : '**구별 부족**'}`);
-  L.push(`- 사례 B(극단) 가장 비슷한 쌍 ${fmt(dist.extremeMin, 3)} > 사례 A(비슷) 가장 다른 쌍 ${fmt(dist.similarMax, 3)} → ${dist.okAB ? '극단 감정 어항이 항상 더 다름' : '겹침 있음'}`);
+  L.push(`- 감정만 다른 어항(같은 시드) 사이 최소 차이 **${fmt(dist.emotionMin, 3)}** (${dist.emotionMinPair}) > 시드만 다른 어항 사이 최대 차이 **${fmt(dist.seedMax, 3)}** → ${dist.ok ? '**수치 기준 통과**' : '**수치 기준 미달**'} (시각적 체감은 짝짓기 테스트 대기)`);
+  L.push(`- 사례 B(극단) 가장 비슷한 쌍 ${fmt(dist.extremeMin, 3)} > 사례 A(비슷) 가장 다른 쌍 ${fmt(dist.similarMax, 3)} → ${dist.okAB ? '수치 기준 통과' : '수치 기준 미달(겹침 있음)'}`);
+  L.push('- **시각적 구별: 미검증.** 위 값은 엔진 상태(물빛 조명값·요소 구성)로 계산한 상대 지표이고 지금 샘플·지금 가중치에서만 성립해요. 실제 관장이 그림만 보고 한눈에 구별한다는 근거가 아니에요. 지금 그림은 임시 SVG이고 같은 테마에 물고기 3종뿐이라 화면상 차이는 수치보다 작을 수 있어요. 짝짓기 테스트(지인 5명 이상, 기준 4/5)로 따로 확인해야 해요.');
   L.push(`- 사례 A 안 배치 차이 ${fmt(h7.layoutA, 2)}: 분위기는 비슷해도 배치는 시드마다 달라요.`);
   L.push('');
   L.push('감정별 차이 행렬(같은 책·같은 시드, 14일 최종):');
@@ -154,5 +155,22 @@ export function buildReport(s: SuiteResult, opts: { determinism?: boolean } = {}
     L.push(`| ${id} ${rs[0]!.name} | ${rs.length} | ${okN}/${rs.length} | 사례 F: ${sample.detail} |`);
   }
   L.push('');
+  L.push('## 8. 후속 실험 과제 (이번 PR에서는 엔진 수치를 바꾸지 않음)');
+  L.push('');
+  L.push('v0.3.1 6.3 절차대로 한 번에 하나만 바꾸고, 바꾸면 `ENGINE_VERSION`을 올린다. 그 전 스냅샷은 바꾸지 않는다.');
+  L.push('');
+  L.push('| 과제 | 왜 | 먼저 할 일 |');
+  L.push('|---|---|---|');
+  for (const f of FOLLOW_UP) L.push(`| ${f.task} | ${f.why} | ${f.first} |`);
+  L.push('');
   return L.join('\n');
 }
+
+/** 후속 실험 과제. 화면 "가설" 탭과 보고서가 함께 쓴다. 이번 PR에서는 엔진 수치를 바꾸지 않는다. */
+export const FOLLOW_UP: Array<{ task: string; why: string; first: string }> = [
+  { task: 'H5 장기 특별 변화', why: '꾸준형 200일에서 131~160일 특별 변화 0회', first: '마일스톤을 기계적으로 촘촘하게(예: 25회마다) 하면 보상이 반복처럼 느껴질 수 있어요. 기간·계절·감정 흐름 같은 다른 종류의 변화와 비교 실험부터' },
+  { task: 'H9 반복 방지', why: '연속 성장에서 같은 종류 33%', first: '"같은 종류(물고기·수초…)가 이어짐"과 "같은 요소가 계속 자람"을 나눠 재는 기준을 먼저 확정. 그다음 기존 요소 키우기의 반복 감점·같은 요소 최대 개수(초깃값 2) 조정' },
+  { task: 'H4 성장 횟수', why: '사례 C는 8회로 통과, 매일 기록하면 11회', first: '사례 C 하나로 전 사용자 적합성을 확정하지 않기. 기록 패턴별 기준(매일·주 5일·띄엄) 정하기' },
+  { task: '시각적 감정 구별', why: '수치 기준만 통과', first: '실제 그래픽 적용 뒤 짝짓기 테스트(지인 5명 이상, 4/5)' },
+  { task: '사람·실기기 평가', why: 'H1·H2·H3·H8·H11 보류', first: '지인 14일 기록, 한마디 라벨링 100개, 저사양 폰 fps' },
+];

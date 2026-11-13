@@ -77,6 +77,65 @@ describe('샘플과 실제 기록 구분', () => {
   });
 });
 
+describe('실제 기록의 종료 상태 표시 (PR #2 리뷰)', () => {
+  const H = 3_600_000;
+  /** 2026-11-13부터 하루 한 번씩 n개 기록한 실제 어항(앱과 같은 TankSession) */
+  function userSession(n: number) {
+    const s = new TankSession({ ...littlePrinceConfig(), tankId: 'tank-user' });
+    let t = Date.UTC(2026, 10, 13, 12);
+    littlePrinceEntries().filter((e, i, a) => a.findIndex((x) => x.localDate === e.localDate) === i).slice(0, n).forEach((e) => {
+      s.addEntry(e, t);
+      t += 24 * H;
+    });
+    return { s, t };
+  }
+
+  it('마무리(wrapped)한 어항은 JSON으로 가져와도 active가 아니라 마지막 프레임에 wrapped로 표시된다', () => {
+    const { s, t } = userSession(5);
+    s.finalize('wrapped', t);
+    const json = JSON.stringify(s.toJSON());
+    const data = parseUserData(json);
+    const run = userRun(data);
+    const last = run.frames[run.frames.length - 1]!;
+
+    expect(data.lifecycle).toBe('wrapped');
+    expect(last.lifecycle).toBe('wrapped');
+    expect(last.moss).toBe(0);
+    // 마무리 날짜가 데이터에 없으므로 지난 날짜로 소급하지 않는다
+    expect(run.frames.slice(0, -1).every((f) => f.lifecycle === 'active')).toBe(true);
+    // 마지막 기록 날짜 뒤의 날짜를 만들어 내지 않는다
+    expect(last.date).toBe(data.entries[data.entries.length - 1]!.localDate);
+    // 한계를 화면에 알린다
+    expect(run.notes.join(' ')).toContain('마무리');
+    // 원본은 그대로
+    expect(JSON.stringify(data)).toBe(json);
+  });
+
+  it('마무리한 실제 어항의 가상 실험(derived)도 마무리로 끝난다', () => {
+    const { s, t } = userSession(4);
+    s.finalize('wrapped', t);
+    const data = parseUserData(JSON.stringify(s.toJSON()));
+    const [d] = derivedTanks(data, [7]).map((x) => runTank(x, 'derived'));
+    expect(d!.frames[d!.frames.length - 1]!.lifecycle).toBe('wrapped');
+    expect(d!.frames.slice(0, -1).every((f) => f.lifecycle === 'active')).toBe(true);
+  });
+
+  it('완성(completed)한 어항은 완성 스냅샷이 생긴 날부터 완성으로 표시된다', () => {
+    const { s, t } = userSession(5);
+    s.finalize('completed', t);
+    const run = userRun(parseUserData(JSON.stringify(s.toJSON())));
+    expect(run.frames[run.frames.length - 1]!.lifecycle).toBe('completed');
+    expect(run.frames.filter((f) => f.lifecycle === 'completed').length).toBe(1);
+    expect(run.notes).toEqual([]);
+  });
+
+  it('진행 중인 어항은 끝까지 active', () => {
+    const { s } = userSession(5);
+    const run = userRun(parseUserData(JSON.stringify(s.toJSON())));
+    expect(run.frames.every((f) => f.lifecycle === 'active')).toBe(true);
+  });
+});
+
 describe('재현성과 감정 차이 (요구 6)', () => {
   it('같은 기록·같은 시드로 다시 돌리면 모든 어항의 스냅샷 해시가 같다', () => {
     const again = runSuite();

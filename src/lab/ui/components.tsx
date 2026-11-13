@@ -3,7 +3,7 @@ import { AquariumCanvas } from '../../ui/AquariumCanvas';
 import type { RenderOptions } from '../../render/AquariumRenderer';
 import type { TankState } from '../../engine/types';
 import { elementOf } from '../../engine/catalog';
-import { fmt, moodCompositionDistance } from '../metrics';
+import { fmt, LIFECYCLE_LABEL, moodCompositionDistance } from '../metrics';
 import { frameAt } from '../runner';
 import { ORIGIN_LABEL, type DataOrigin, type DayFrame, type RunResult } from '../types';
 import { stills } from './stills';
@@ -43,7 +43,7 @@ export function Thumb({ frame, onClick, big }: { frame: DayFrame; onClick?: () =
     <button ref={ref} type="button" className={big ? 'thumb big' : 'thumb'} style={{ background: frame.metrics.waterHex }} onClick={onClick}
       aria-label={`${frame.day}일차 어항: 물고기 ${frame.metrics.fish}, 수초 ${frame.metrics.plant}, 수석 ${frame.metrics.rock}, 상징 ${frame.metrics.symbol}, ${frame.metrics.moodName}`}>
       {url ? <img src={url} alt="" /> : <span className="thumb-wait">{err ? '그림 실패' : '그리는 중'}</span>}
-      {frame.lifecycle === 'completed' && <span className="thumb-flag">완성</span>}
+      {frame.lifecycle !== 'active' && <span className="thumb-flag">{LIFECYCLE_LABEL[frame.lifecycle]}</span>}
     </button>
   );
 }
@@ -134,7 +134,7 @@ export function FinalTable({ runs, day }: { runs: RunResult[]; day?: number }) {
                 <td>{fmt(m.lightTemp)} · {fmt(m.lightEnergy)}</td>
                 <td>{ev.filter((e) => e.level === 'growth').length}</td>
                 <td>{sp.length}{sp.length ? ` (${sp.map((e) => e.day).join(', ')}일)` : ''}</td>
-                <td>{f.lifecycle === 'completed' ? '완성' : f.moss ? `이끼 ${f.moss}` : '진행 중'}</td>
+                <td>{f.lifecycle !== 'active' ? LIFECYCLE_LABEL[f.lifecycle] : f.moss ? `이끼 ${f.moss}` : '진행 중'}</td>
               </tr>
             );
           })}
@@ -149,7 +149,7 @@ export function DailyTable({ run, days }: { run: RunResult; days: number[] }) {
     <div className="table-wrap">
       <table className="metrics">
         <thead>
-          <tr><th>일</th><th>기록</th><th>물·초·석·상</th><th>합계</th><th>단계</th><th>평균 크기</th><th>물빛</th><th>온도·에너지</th><th>조명 이동</th><th>효과</th><th>이끼</th><th>그날 변화</th></tr>
+          <tr><th>일</th><th>기록</th><th>물·초·석·상</th><th>합계</th><th>단계</th><th>평균 크기</th><th>물빛</th><th>온도·에너지</th><th>조명 이동</th><th>효과</th><th>이끼·상태</th><th>그날 변화</th></tr>
         </thead>
         <tbody>
           {days.filter((d) => d <= run.frames.length).map((d) => {
@@ -168,7 +168,7 @@ export function DailyTable({ run, days }: { run: RunResult; days: number[] }) {
                 <td>{fmt(m.lightTemp)} · {fmt(m.lightEnergy)}</td>
                 <td>{f.lightUsed ? `${Math.round(f.lightUsed * 100)}%` : ''}</td>
                 <td>{m.effects.map((e) => (e === 'fx.lightray' ? '빛줄기' : '별')).join('·')}</td>
-                <td>{f.moss || ''}</td>
+                <td>{[f.moss ? `이끼 ${f.moss}` : '', f.lifecycle !== 'active' ? LIFECYCLE_LABEL[f.lifecycle] : ''].filter(Boolean).join(' · ')}</td>
                 <td className="events">{ev.map((e, i) => <div key={i} className={`ev ev-${e.level}`}>{e.text}</div>)}</td>
               </tr>
             );
@@ -260,6 +260,7 @@ export function FrameModal({ open, onClose }: { open: OpenFrame | null; onClose:
             <dt>성장 단계</dt><dd>{m.stage} {m.stageName} · 평균 크기 {m.avgScale} · 최대 {m.maxScale}</dd>
             <dt>물빛</dt><dd><Swatch hex={m.waterHex} /> {m.moodName} (온도 {fmt(m.lightTemp)}, 에너지 {fmt(m.lightEnergy)})</dd>
             <dt>물고기 행동</dt><dd>속도 ×{m.speed} · 깊이 {fmt(m.depth)}</dd>
+            <dt>상태</dt><dd>{LIFECYCLE_LABEL[frame.lifecycle]}</dd>
             <dt>효과 · 이끼</dt><dd>{m.effects.map((e) => (e === 'fx.lightray' ? '빛줄기' : '밝은 별')).join(', ') || '없음'} · 이끼 {frame.moss}</dd>
           </dl>
           <div>

@@ -172,7 +172,7 @@ function h4(s: SuiteResult): HypothesisResult {
     needsHuman: false, humanPart: null,
     autoVerdict: ok ? 'pass' : 'adjust', verdict: ok ? 'pass' : 'adjust',
     reason: ok
-      ? `사례 C는 ${n}회로 기준 안이에요. 다만 14일을 하루도 빠짐없이 기록하면 ${fmt(avg('case-A'), 0)}회(특별 변화 3회를 더하면 매일 주요 변화)라 기준을 넘어요. 기준을 "사례 C" 기준으로 둘지, 매일 기록자 기준으로 둘지 정해야 해요.`
+      ? `사례 C는 ${n}회로 기준 안이에요. 다만 14일을 하루도 빠짐없이 기록하면 ${fmt(avg('case-A'), 0)}회(특별 변화 3회를 더하면 매일 주요 변화)라 기준을 넘어요. 사례 C 하나로 모든 기록 패턴에 맞는다고 확정할 수 없어요. 기준을 "사례 C"로 둘지 기록 패턴별로 둘지는 후속 실험 과제예요.`
       : `사례 C가 ${n}회로 7~10회를 벗어났어요.`,
     scenarios: ['case-C', 'case-A', 'case-B', 'case-E', 'cmp-frequency'],
   };
@@ -262,7 +262,7 @@ function h7(s: SuiteResult): HypothesisResult {
     needsHuman: false, humanPart: '사례 A의 "내 것" 느낌과 사례 B 짝짓기(4/5 이상)는 지인 테스트에서 확인',
     autoVerdict: ok ? 'pass' : 'adjust', verdict: ok ? 'pass' : 'adjust',
     reason: ok
-      ? `비슷한 감정끼리는 분위기·구성 차이가 ${fmt(d.within, 3)}, 극단 감정끼리는 ${fmt(d.extreme, 3)}로 절반 기준을 넘었어요. 배치는 시드마다 ${fmt(d.layoutA, 2)}만큼 달라 개성이 남아요.`
+      ? `비슷한 감정끼리는 분위기·구성 차이가 ${fmt(d.within, 3)}, 극단 감정끼리는 ${fmt(d.extreme, 3)}로 절반 기준을 넘었어요(수치 기준 통과). 배치는 시드마다 ${fmt(d.layoutA, 2)}만큼 달라 개성이 남아요. 다만 이건 엔진 상태로 계산한 수치라, 그림을 보고 한눈에 구별되는지·"내 것" 느낌이 나는지는 사람 평가(짝짓기 테스트) 전까지 검증되지 않았어요.`
       : `비슷한 그룹 차이(${fmt(d.within, 3)})가 극단 그룹(${fmt(d.extreme, 3)})의 절반 이상이에요. 시드 비중이 크거나 감정이 구성에 덜 반영돼요.`,
     scenarios: ['case-A', 'case-B', 'cmp-seed', 'cmp-emotion'],
   };

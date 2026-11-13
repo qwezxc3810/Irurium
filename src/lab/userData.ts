@@ -3,7 +3,7 @@ import { addDays, daysBetween } from '../engine/dates';
 import { computeMoss } from '../engine/moss';
 import { hashOf } from '../engine/random';
 import type { SessionData } from '../engine/session';
-import type { Snapshot } from '../engine/types';
+import type { Lifecycle, Snapshot } from '../engine/types';
 import { frameMetrics } from './metrics';
 import { eventsOf } from './runner';
 import { SAMPLE_PREFIX, type DayFrame, type RunResult, type SampleTank, type ScriptedEntry } from './types';
@@ -114,13 +114,16 @@ export function userRun(d: Readonly<SessionData>): RunResult {
       idx++;
     }
     const lastActivity = dated.filter((x) => x.s.input && x.date && x.date <= date).reduce((m, x) => (x.date! > m ? x.date! : m), start);
-    const closed = head.kind === 'finale';
+    // 완성은 완성 스냅샷(finale)이 생긴 날부터 알 수 있다.
+    // 마무리(wrapped)는 스냅샷을 추가하지 않고 머리를 고정하는 정책이라(v0.3.2 3.3) 마무리한 날짜가 데이터에 없다.
+    // 그래서 지난 날짜로 소급하지 않고, 마지막 프레임(마지막 기록 날짜)에만 저장된 lifecycle을 적용한다. 그 뒤 날짜는 만들지 않는다.
+    const lifecycle: Lifecycle = head.kind === 'finale' ? 'completed' : day === days && d.lifecycle !== 'active' ? d.lifecycle : 'active';
     frames.push({
       day, date, state: head.state,
-      moss: computeMoss({ lifecycle: closed ? 'completed' : 'active', lastActivityDate: lastActivity, today: date, rules: [...d.restRules] }).stage,
+      moss: computeMoss({ lifecycle, lastActivityDate: lastActivity, today: date, rules: [...d.restRules] }).stage,
       entries: today.filter((s) => s.kind === 'entry').length,
       changes: today.flatMap((s) => s.changes),
-      lifecycle: closed ? 'completed' : 'active',
+      lifecycle,
       progress: head.ledger.maxProgress,
       lightUsed: head.ledger.dayLightShift.date === date ? head.ledger.dayLightShift.used : 0,
       metrics: frameMetrics(head.state),
@@ -142,6 +145,11 @@ export function userRun(d: Readonly<SessionData>): RunResult {
       days: trail.length,
     },
     rules: [],
+    notes: d.lifecycle === 'wrapped'
+      ? [`이 어항은 마무리(wrapped)됐어요. 마무리한 날짜는 기록에 저장되지 않아서, 마지막 기록 날짜(${lastDate}) 프레임에만 '마무리'로 표시하고 그 뒤 날짜는 만들지 않아요. 그 전 날짜는 당시 상태(진행 중)로 보여요.`]
+      : d.lifecycle === 'completed' && !chain.some((s) => s.kind === 'finale')
+        ? ['저장된 상태는 완성인데 완성 스냅샷이 없어요. 마지막 프레임에만 완성으로 표시해요.']
+        : [],
   };
 }
 
@@ -166,7 +174,7 @@ export function derivedTanks(d: Readonly<SessionData>, seeds: number[]): SampleT
       note: s.input!.note,
     }));
     return {
-      key, label: `같은 기록 · 시드 ${i + 1}`, days, finishOnLastPage: d.lifecycle === 'completed',
+      key, label: `같은 기록 · 시드 ${i + 1}`, days, finishOnLastPage: d.lifecycle === 'completed', endWrapped: d.lifecycle === 'wrapped',
       cfg: { ...d.cfg, goal: { ...d.cfg.goal }, tankId: `derived:${d.cfg.tankId}:${key}`, seed },
       entries,
     };

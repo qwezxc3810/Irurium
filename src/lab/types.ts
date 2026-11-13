@@ -38,6 +38,8 @@ export interface SampleTank {
   restWeekdays?: number;
   /** 마지막 쪽에 도착하면 '다 읽었어요'로 답해 완성한다 */
   finishOnLastPage?: boolean;
+  /** 마지막 날 기록 뒤 '지금까지로 마무리'(wrapped)한다. 실제 기록을 복사한 derived 실험에서 원본이 마무리된 경우 */
+  endWrapped?: boolean;
   /** 짝짓기 테스트 등에서 쓰는 정답 라벨 */
   tags?: Record<string, string>;
 }
@@ -122,6 +124,8 @@ export interface RunResult {
   trailAvg: { temp: number; energy: number; days: number };
   /** 하루 1회·조명 30%·확정 순서 등 규칙 검사 */
   rules: RuleCheck[];
+  /** 표시상 한계 등 화면·보고서에 함께 보여 줄 안내 */
+  notes: string[];
 }
 
 export interface RuleCheck {

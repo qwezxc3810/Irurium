@@ -1,12 +1,14 @@
 import { CAPS } from '../engine/config';
 import { CHIP_VECTORS, BASE_CHIPS } from '../engine/mood';
-import type { TankState } from '../engine/types';
+import type { Lifecycle, TankState } from '../engine/types';
 import type { FrameMetrics } from './types';
 
 /**
  * 검증용 지표. 엔진 규칙이 아니라 "보는 사람이 비교하기 쉽게" 만든 측정값이다.
  * 성장 단계·차이 거리 같은 정의는 [검증용 정의]이며 엔진 결과에 영향을 주지 않는다.
  */
+
+export const LIFECYCLE_LABEL: Record<Lifecycle, string> = { active: '진행 중', completed: '완성', wrapped: '마무리' };
 
 export const CAP_TOTAL = CAPS.fish + CAPS.plant + CAPS.rock + CAPS.symbol;
 

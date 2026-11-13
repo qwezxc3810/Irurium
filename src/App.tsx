@@ -127,7 +127,8 @@ export function App() {
     let i = 0;
     demoTimer.current = window.setInterval(() => {
       const e = list[i];
-      if (!e) return stopDemo();
+      // 재생 중에 마무리·완성으로 어항이 닫히면 재생을 멈춘다(닫힌 어항에는 기록할 수 없음)
+      if (!e || session.current.lifecycle !== 'active') return stopDemo();
       const at = Date.parse(`${e.localDate}T12:00:00Z`) + i * 60_000;
       setNow(at);
       save(e, at);

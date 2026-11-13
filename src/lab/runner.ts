@@ -54,6 +54,9 @@ export function runTank(t: SampleTank, origin: DataOrigin = 'sample'): RunResult
       lastMs = now;
       if (r.needsCompletionPrompt && t.finishOnLastPage) s.answerCompletion('finished', now + 60_000);
     }
+    if (day === t.days && t.endWrapped && s.lifecycle === 'active') {
+      s.finalize('wrapped', Math.max(lastMs + 60_000, msAt(date, '23:58')));
+    }
     s.confirmIfDue(msAt(date, '23:59'));
     const fresh = s.snapshots.slice(before);
     for (const sn of fresh) snapDay.set(sn.id, day);
@@ -95,6 +98,7 @@ export function runTank(t: SampleTank, origin: DataOrigin = 'sample'): RunResult
       days: trail.length,
     },
     rules: ruleChecks(s, frames, events, invariants),
+    notes: [],
   };
 }
 

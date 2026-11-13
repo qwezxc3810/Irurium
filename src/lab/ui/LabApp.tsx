@@ -3,13 +3,16 @@ import { ENGINE_VERSION } from '../../engine/config';
 import { seedFromString } from '../../engine/random';
 import type { SessionData } from '../../engine/session';
 import { distinctness, evaluateHypotheses, VERDICT_LABEL, type HypothesisResult } from '../hypotheses';
-import { fmt } from '../metrics';
-import { buildReport } from '../report';
+import { fmt, LIFECYCLE_LABEL } from '../metrics';
+import { buildReport, FOLLOW_UP } from '../report';
 import { checkDeterminism, runSuite, runTank, type SuiteResult } from '../runner';
 import { LONG_CHECKPOINTS, LONG_DURATIONS } from '../samples';
 import type { RunResult, SampleScenario } from '../types';
 import { derivedTanks, fingerprintOf, LAB_IMPORT_KEY, parseUserData, userRun, verifyUserData, type IntegrityReport } from '../userData';
 import { DailyTable, DistanceMatrix, FinalTable, FrameModal, Gallery, LineChart, OriginBadge, SERIES_COLORS, Thumb, type OpenFrame } from './components';
+
+/** 수치상 구별을 시각적 구별로 오해하지 않게 하는 안내(리뷰 반영). 보고서에도 같은 뜻으로 들어간다. */
+const VISUAL_CAVEAT = '위 감정 구별은 엔진 상태(물빛 조명값·요소 구성)로 계산한 상대적인 수치 지표이고, 지금 샘플과 지금 가중치에서만 성립해요. 실제 관장이 그림을 보고 한눈에 구별할 수 있다는 뜻은 아니에요. 지금 그림은 임시 SVG이고 같은 테마에 물고기가 3종뿐이라, 화면에서 느끼는 차이는 수치보다 작을 수 있어요. 시각적 구별은 짝짓기 테스트(지인 5명 이상, 기준 4/5)로 따로 확인해야 해요.';
 
 type Tab = 'overview' | 'cases' | 'compare' | 'long' | 'hyp' | 'match' | 'user';
 
@@ -103,13 +106,15 @@ function Overview({ suite, hyps, onHyp }: { suite: SuiteResult; hyps: Hypothesis
       </section>
 
       <section className="card">
-        <h2>같은 기록이면 같은 어항, 다른 감정이면 다른 어항</h2>
+        <h2>같은 기록이면 같은 어항, 다른 감정이면 수치상 다른 어항</h2>
         <ul className="checks">
-          <li className={dist.ok ? 'ok' : 'bad'}>감정만 다르고 시드는 같은 어항끼리 가장 비슷한 쌍({dist.emotionMinPair})의 차이 <b>{fmt(dist.emotionMin, 3)}</b> &gt; 감정은 같고 시드만 다른 어항끼리 가장 다른 쌍 <b>{fmt(dist.seedMax, 3)}</b></li>
-          <li className={dist.okAB ? 'ok' : 'bad'}>사례 B(극단) 가장 비슷한 쌍 <b>{fmt(dist.extremeMin, 3)}</b> &gt; 사례 A(비슷) 가장 다른 쌍 <b>{fmt(dist.similarMax, 3)}</b></li>
+          <li className={dist.ok ? 'ok' : 'bad'}><b>수치 기준 {dist.ok ? '통과' : '미달'}</b> · 감정만 다르고 시드는 같은 어항끼리 가장 비슷한 쌍({dist.emotionMinPair})의 차이 <b>{fmt(dist.emotionMin, 3)}</b> &gt; 감정은 같고 시드만 다른 어항끼리 가장 다른 쌍 <b>{fmt(dist.seedMax, 3)}</b></li>
+          <li className={dist.okAB ? 'ok' : 'bad'}><b>수치 기준 {dist.okAB ? '통과' : '미달'}</b> · 사례 B(극단) 가장 비슷한 쌍 <b>{fmt(dist.extremeMin, 3)}</b> &gt; 사례 A(비슷) 가장 다른 쌍 <b>{fmt(dist.similarMax, 3)}</b></li>
+          <li className="pending"><b>시각적 구별: 미검증</b> · 짝짓기 테스트(사람 평가) 대기</li>
           <li className={invFails.length ? 'bad' : 'ok'}>불변 규칙 I1~I4(모든 스냅샷 다시 계산 포함): 어항 {all.length}개 중 {all.length - invFails.length}개 통과</li>
           <li className={ruleFails.length ? 'bad' : 'ok'}>하루 규칙(새 오브젝트 1개·주요 변화 1회·조명 30%·확정 순서): {ruleFails.length ? `어긋남 ${ruleFails.join(', ')}` : '모두 통과'}</li>
         </ul>
+        <p className="limit">{VISUAL_CAVEAT}</p>
         <div className="row">
           <button className="primary" onClick={() => setDet(checkDeterminism())}>재현성 검사 (전체를 두 번 처음부터)</button>
           <button onClick={() => setReport(buildReport(suite, { determinism: true }))}>보고서 보기(마크다운)</button>
@@ -125,7 +130,7 @@ function Overview({ suite, hyps, onHyp }: { suite: SuiteResult; hyps: Hypothesis
       </section>
 
       <section className="card">
-        <h2>감정별 차이(같은 책·같은 시드, 14일 뒤)</h2>
+        <h2>감정별 차이(같은 책·같은 시드, 14일 뒤) — 수치 지표</h2>
         <DistanceMatrix runs={suite.runs['cmp-emotion']!.filter((r) => r.tags.emotion !== '감정 없음')} />
       </section>
     </div>
@@ -256,6 +261,16 @@ function HypTab({ hyps, onScenario }: { hyps: HypothesisResult[]; onScenario: (i
       <section className="card notice">
         <p><b>판정 기준</b> · <span className="v v-pass">통과(자동 기준)</span> 시뮬레이터로 잴 수 있는 기준을 넘음(지인 테스트로 진행, 확정 아님) · <span className="v v-adjust">조정 필요</span> 기준 미달이거나 문서 초깃값과 구현이 다름 · <span className="v v-hold">보류(사람 평가 필요)</span> 실제 사용자 평가·실기기 측정이 있어야 판단, 자동 측정이 좋아도 통과로 올리지 않음</p>
       </section>
+      <section className="card">
+        <h2>후속 실험 과제</h2>
+        <p className="hint">H5·H9 엔진 수치는 이번 PR에서 바꾸지 않았어요. 바꿀 때는 한 번에 하나만, ENGINE_VERSION을 올려서.</p>
+        <div className="table-wrap">
+          <table className="metrics">
+            <thead><tr><th>과제</th><th>왜</th><th>먼저 할 일</th></tr></thead>
+            <tbody>{FOLLOW_UP.map((f) => <tr key={f.task}><td className="name">{f.task}</td><td>{f.why}</td><td className="events">{f.first}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </section>
       {hyps.map((h) => (
         <section key={h.id} className={`card hyp v-border-${h.verdict}`}>
           <div className="row spread">
@@ -307,6 +322,7 @@ function MatchTab({ suite }: { suite: SuiteResult }) {
       <section className="card notice">
         <OriginBadge origin="sample" />
         <p>사례 B의 다섯 어항(14일 뒤)을 순서를 섞어 보여 줘요. 그림만 보고 어떤 감정으로 자란 어항인지 골라 보세요. v0.3.1 기준은 <b>5개 중 4개 이상</b>이에요. 지인에게 보여 줄 때는 이 화면을 그대로 쓰면 돼요.</p>
+        <p className="hint">개요 탭의 감정 구별은 엔진 상태로 계산한 <b>수치 기준</b>이에요. 실제로 눈으로 구별되는지는 이 테스트를 여러 사람에게 해 봐야 알 수 있어요(아직 미검증). 기획자·개발자가 직접 맞힌 결과는 정답을 알고 있어서 근거로 쓰지 않아요.</p>
         <div className="row">
           <button className={source === 'case-B' ? 'chip on' : 'chip'} onClick={() => setSource('case-B')}>사례 B(시드도 다름)</button>
           <button className={source === 'cmp-emotion' ? 'chip on' : 'chip'} onClick={() => setSource('cmp-emotion')}>감정만 다름(시드 같음)</button>
@@ -396,12 +412,13 @@ function UserTab({ onOpen }: { onOpen: (o: OpenFrame) => void }) {
             <h2>무결성(읽기 전용 확인)</h2>
             <ul className="checks">
               <li className={integrity.problems.length ? 'bad' : 'ok'}>스냅샷 {integrity.checked}개를 저장된 입력으로 다시 계산해 해시만 비교: {integrity.problems.length ? integrity.problems.slice(0, 3).join(' / ') : '모두 일치'}</li>
-              <li className="ok">원본 지문 <code>{integrity.fingerprint}</code> · 기록 {run.entryCount}개 · 어항 {data.cfg.tankId}</li>
+              <li className="ok">원본 지문 <code>{integrity.fingerprint}</code> · 기록 {run.entryCount}개 · 어항 {data.cfg.tankId} · 저장된 상태 {LIFECYCLE_LABEL[data.lifecycle]}</li>
               {check && <li className={check.before === check.after ? 'ok' : 'bad'}>가상 실험 전후 원본 지문: {check.before} → {check.after} {check.before === check.after ? '(그대로)' : '(바뀜!)'}</li>}
             </ul>
           </section>
           <section className="card">
             <div className="row spread"><h2 style={{ margin: 0 }}>내 어항 날짜별</h2><OriginBadge origin="user" /></div>
+            {run.notes.map((n) => <p key={n} className="limit">{n}</p>)}
             <Gallery runs={[run]} days={days} onOpen={onOpen} />
             <DailyTable run={run} days={days} />
           </section>
