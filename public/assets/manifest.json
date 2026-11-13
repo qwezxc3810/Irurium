@@ -14,7 +14,11 @@
       "swim": {
         "amplitude": 0.1,
         "frequency": 1.1
-      }
+      },
+      "size": [
+        768,
+        248
+      ]
     },
     "fish.goldfish": {
       "src": "fish/goldfish-semi.webp",
@@ -22,7 +26,11 @@
       "swim": {
         "amplitude": 0.08,
         "frequency": 0.7
-      }
+      },
+      "size": [
+        768,
+        433
+      ]
     },
     "fish.bluefin": {
       "src": "fish/bluefin.webp",
@@ -30,7 +38,11 @@
       "swim": {
         "amplitude": 0.06,
         "frequency": 0.6
-      }
+      },
+      "size": [
+        768,
+        415
+      ]
     },
     "fish.foxfish": {
       "src": "fish/foxfish.webp",
@@ -38,7 +50,11 @@
       "swim": {
         "amplitude": 0.07,
         "frequency": 0.6
-      }
+      },
+      "size": [
+        768,
+        335
+      ]
     },
     "plant.stem": {
       "src": "plants/stem.webp",
@@ -46,7 +62,11 @@
       "sway": {
         "amplitude": 0.06,
         "frequency": 0.35
-      }
+      },
+      "size": [
+        263,
+        640
+      ]
     },
     "plant.leafy": {
       "src": "plants/leafy.webp",
@@ -54,7 +74,11 @@
       "sway": {
         "amplitude": 0.04,
         "frequency": 0.3
-      }
+      },
+      "size": [
+        307,
+        640
+      ]
     },
     "plant.foxtail": {
       "src": "plants/foxtail.webp",
@@ -62,23 +86,43 @@
       "sway": {
         "amplitude": 0.05,
         "frequency": 0.4
-      }
+      },
+      "size": [
+        291,
+        640
+      ]
     },
     "rock.round": {
       "src": "rocks/round.webp",
-      "displayWidth": 140
+      "displayWidth": 140,
+      "size": [
+        640,
+        380
+      ]
     },
     "rock.sharp": {
       "src": "rocks/sharp.webp",
-      "displayWidth": 140
+      "displayWidth": 140,
+      "size": [
+        640,
+        415
+      ]
     },
     "symbol.rose-coral": {
       "src": "symbols/rose-coral.webp",
-      "displayHeight": 135
+      "displayHeight": 135,
+      "size": [
+        535,
+        640
+      ]
     },
     "symbol.sand-lantern": {
       "src": "symbols/sand-lantern.webp",
-      "displayHeight": 120
+      "displayHeight": 120,
+      "size": [
+        437,
+        640
+      ]
     }
   },
   "fx": {

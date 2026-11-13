@@ -5,6 +5,8 @@ import type { SessionData } from '../../engine/session';
 import { distinctness, evaluateHypotheses, VERDICT_LABEL, type HypothesisResult } from '../hypotheses';
 import { fmt, LIFECYCLE_LABEL } from '../metrics';
 import { buildReport, FOLLOW_UP } from '../report';
+import { OCCLUSION_TARGET, occlusionRows, pct } from '../occlusion';
+import { loadManifest, type ElementAsset } from '../../assets/manifest';
 import { checkDeterminism, runSuite, runTank, type SuiteResult } from '../runner';
 import { LONG_CHECKPOINTS, LONG_DURATIONS } from '../samples';
 import type { RunResult, SampleScenario } from '../types';
@@ -252,7 +254,41 @@ function LongTab({ suite, onOpen }: { suite: SuiteResult; onOpen: (o: OpenFrame)
         <h2>시점별 수치표</h2>
         <DailyTable run={run} days={checkpoints} />
       </section>
+      <OcclusionCard suite={suite} />
     </div>
+  );
+}
+
+/** 이슈 #6: 오래 자란 어항의 물고기 가림. 이전 표시 방식과 지금 표시 방식 비교(엔진 상태는 같음) */
+function OcclusionCard({ suite }: { suite: SuiteResult }) {
+  const [assets, setAssets] = useState<Record<string, ElementAsset> | null>(null);
+  useEffect(() => { loadManifest().then((m) => setAssets(m.elements)).catch(() => setAssets(null)); }, []);
+  const rows = useMemo(() => (assets ? occlusionRows(suite, assets) : []), [suite, assets]);
+  return (
+    <section className="card">
+      <h2>물고기 가림 지표 (이슈 #6)</h2>
+      <p className="hint">엔진 상태는 그대로 두고 화면 표시 규칙만 바꿨어요: 1배를 넘는 성장은 절반만 커 보이게(물고기 60%), 앞쪽 수초는 60% 높이, 물고기가 앞쪽 수초 뒤를 지나면 수초가 옅어짐, 물고기 헤엄 높이를 세로로 덜 겹치게 배치. 기준(초안): 실제 가림 {pct(OCCLUSION_TARGET.effectiveCover)} 미만, 수초 꼭대기 y {OCCLUSION_TARGET.plantTopMin} 아래. 물고기 위치는 시작 위치 기준 근사값이에요.</p>
+      {!assets ? <p className="hint">그래픽 크기 정보를 불러오는 중…</p> : (
+        <div className="table-wrap">
+          <table className="metrics">
+            <thead><tr><th>어항</th><th>물고기</th><th>앞 수초에 가림 (이전 → 지금·실제)</th><th>수초 꼭대기 y (이전 → 지금)</th><th>물고기끼리 겹침</th><th>헤엄 띠 겹침</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.label}>
+                  <td className="name">{r.label}</td>
+                  <td>{r.after.fish}</td>
+                  <td>{pct(r.before.frontCover)} → <b>{pct(r.after.effectiveCover)}</b></td>
+                  <td>{Math.round(r.before.plantTop)} → <b>{Math.round(r.after.plantTop)}</b></td>
+                  <td>{pct(r.before.fishOverlap)} → <b>{pct(r.after.fishOverlap)}</b></td>
+                  <td>{pct(r.before.bandOverlap)} → <b>{pct(r.after.bandOverlap)}</b></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="limit">물고기가 많고 큰 200일 꾸준형은 헤엄 공간(세로 330px)보다 물고기 키 합이 커서 화면 규칙만으로는 겹침이 남아요. 물고기 수·크기 상한(엔진, H8)은 별도 실험 과제예요.</p>
+    </section>
   );
 }
 
