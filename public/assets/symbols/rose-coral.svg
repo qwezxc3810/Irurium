@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="200" viewBox="0 0 160 200">
+<!-- 임시 리소스: 장미 산호(상징) -->
+<g stroke="#E11D48" stroke-width="9" fill="none" stroke-linecap="round">
+<path d="M80 200 C78 150 82 110 80 70"/><path d="M80 140 C60 120 50 96 46 70"/><path d="M80 120 C102 104 112 80 116 52"/></g>
+<circle cx="80" cy="62" r="16" fill="#FB7185"/><circle cx="46" cy="64" r="11" fill="#FDA4AF"/><circle cx="116" cy="46" r="12" fill="#FDA4AF"/>
+</svg>

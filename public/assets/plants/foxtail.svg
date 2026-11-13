@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="320" viewBox="0 0 128 320">
+<!-- 임시 리소스: 여우꼬리풀. 밑동이 아래 가운데(anchor 0.5, 1) -->
+<path d="M64 320 C60 250 70 180 64 110" stroke="#9A3412" stroke-width="5" fill="none"/><ellipse cx="64" cy="120" rx="18" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="134" rx="17" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="148" rx="16" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="162" rx="15" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="176" rx="14" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="190" rx="13" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="204" rx="12" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="218" rx="11" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="232" rx="10" ry="10" fill="#FDBA74" opacity="0.9"/><ellipse cx="64" cy="246" rx="9" ry="10" fill="#FDBA74" opacity="0.9"/>
+</svg>

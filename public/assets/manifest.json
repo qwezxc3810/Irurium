@@ -1,0 +1,89 @@
+{
+  "$comment": "그래픽 리소스 목록. 그림을 바꿀 때는 이 파일의 경로만 바꾸거나 같은 이름으로 파일을 덮어쓴다. 규격은 docs/ASSET_SPEC.md",
+  "version": 1,
+  "themes": {
+    "starlit-desert": {
+      "background": "themes/starlit-desert/background.svg",
+      "floor": "themes/starlit-desert/floor.svg"
+    }
+  },
+  "elements": {
+    "fish.medaka": {
+      "src": "fish/medaka.svg",
+      "displayWidth": 96,
+      "swim": {
+        "amplitude": 0.1,
+        "frequency": 1.0
+      }
+    },
+    "fish.goldfish": {
+      "src": "fish/goldfish.svg",
+      "displayWidth": 130,
+      "swim": {
+        "amplitude": 0.12,
+        "frequency": 0.8
+      }
+    },
+    "fish.bluefin": {
+      "src": "fish/bluefin.svg",
+      "displayWidth": 100,
+      "swim": {
+        "amplitude": 0.09,
+        "frequency": 0.9
+      }
+    },
+    "fish.foxfish": {
+      "src": "fish/foxfish.svg",
+      "displayWidth": 150,
+      "swim": {
+        "amplitude": 0.12,
+        "frequency": 0.7
+      }
+    },
+    "plant.stem": {
+      "src": "plants/stem.svg",
+      "displayHeight": 220,
+      "sway": {
+        "amplitude": 0.06,
+        "frequency": 0.35
+      }
+    },
+    "plant.leafy": {
+      "src": "plants/leafy.svg",
+      "displayHeight": 200,
+      "sway": {
+        "amplitude": 0.05,
+        "frequency": 0.3
+      }
+    },
+    "plant.foxtail": {
+      "src": "plants/foxtail.svg",
+      "displayHeight": 210,
+      "sway": {
+        "amplitude": 0.07,
+        "frequency": 0.4
+      }
+    },
+    "rock.round": {
+      "src": "rocks/round.svg",
+      "displayWidth": 130
+    },
+    "rock.sharp": {
+      "src": "rocks/sharp.svg",
+      "displayWidth": 130
+    },
+    "symbol.rose-coral": {
+      "src": "symbols/rose-coral.svg",
+      "displayHeight": 130
+    },
+    "symbol.sand-lantern": {
+      "src": "symbols/sand-lantern.svg",
+      "displayHeight": 130
+    }
+  },
+  "fx": {
+    "bubble": "fx/bubble.svg",
+    "fx.lightray": "fx/lightray.svg",
+    "fx.stars-bright": "fx/star.svg"
+  }
+}
