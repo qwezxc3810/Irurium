@@ -15,7 +15,7 @@ import type {
  *  I1 미확정 스냅샷은 최대 1개, 삭제되지 않은 가장 마지막 기록의 것
  *  I2 스냅샷 n = computeSnapshot(직전 확정 스냅샷, 기록 n)
  *  I3 확정 스냅샷은 다시 계산하지 않는다(만든 뒤 내용이 바뀌지 않는다)
- *  I4 기록의 localDate는 줄어들지 않는다
+ *  I4 기록의 localDate는 줄어들지 않는다(미확정 상태에서 폐기한 기록은 기록 흐름에서 빠지므로 제외)
  */
 
 function contentHashOf(o: Pick<EngineOutput, 'state' | 'ledger' | 'changes'>): string {
@@ -94,14 +94,21 @@ export class TankSession {
   }
 
   /**
+   * 어항의 기록 흐름에 속한 기록: 폐기(discarded)한 것만 뺀다.
+   * 확정 후 숨긴(hidden) 기록은 스냅샷이 남아 있고 그 날짜가 엔진 원장에도 들어 있으므로 포함한다.
+   * 날짜 보정(I4), 이끼 기준일, I4 검사가 모두 이 목록을 쓴다.
+   */
+  private chainEntries(): Entry[] {
+    return this.d.entries.filter((e) => e.deleteMode !== 'discarded');
+  }
+
+  /**
    * 이끼·쉬는 중 계산의 기준일(v0.3.2 보완서 4.3).
    * 확정 후 숨긴 기록(hidden)은 활동한 사실이 있으므로 포함한다. 지웠다고 이끼가 갑자기 생기지 않게 하려는 것.
    * 미확정 상태에서 지운 기록(discarded)은 실수 입력으로 보고 제외한다.
    */
   lastActivityDate(): ISODate {
-    return this.d.entries
-      .filter((e) => e.deleteMode !== 'discarded')
-      .reduce<ISODate>((m, e) => maxDate(m, e.localDate), this.d.cfg.startDate);
+    return this.chainEntries().reduce<ISODate>((m, e) => maxDate(m, e.localDate), this.d.cfg.startDate);
   }
 
   moss(today: ISODate): MossResult {
@@ -142,8 +149,9 @@ export class TankSession {
     const head = this.head;
     if (head.status === 'draft') this.confirm(head, 'next_entry', now);
 
-    const lastDate = this.d.entries.reduce<ISODate | null>((m, e) => (m && m > e.localDate ? m : e.localDate), null);
-    const localDate = lastDate && req.localDate < lastDate ? lastDate : req.localDate; // I4
+    // I4: 기록 흐름(폐기 기록 제외)의 마지막 날짜보다 이르면 그 날짜로 맞춘다(시간대 이동 대응)
+    const lastDate = this.chainEntries().reduce<ISODate | null>((m, e) => (m && m > e.localDate ? m : e.localDate), null);
+    const localDate = lastDate && req.localDate < lastDate ? lastDate : req.localDate;
     const seq = this.d.entries.length + 1;
     const entry: Entry = {
       id: `e${seq}`, clientId: req.clientId, seq, localDate, amount: Math.max(0, req.amount), progressValue: req.progressValue,
@@ -294,8 +302,9 @@ export class TankSession {
       }
     }
     // I4
-    for (let i = 1; i < this.d.entries.length; i++) {
-      if (this.d.entries[i]!.localDate < this.d.entries[i - 1]!.localDate) errors.push('I4: localDate 감소');
+    const chain = this.chainEntries();
+    for (let i = 1; i < chain.length; i++) {
+      if (chain[i]!.localDate < chain[i - 1]!.localDate) errors.push('I4: localDate 감소');
     }
     return errors;
   }

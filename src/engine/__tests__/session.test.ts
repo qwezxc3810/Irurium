@@ -280,3 +280,53 @@ describe('삭제한 기록과 이끼 기준', () => {
     expect(s.lastActivityDate()).toBe('2026-11-13');
   });
 });
+
+describe('폐기한 기록과 날짜 보정(PR #1 2차 리뷰 회귀 테스트)', () => {
+  it('미확정 상태에서 폐기한 미래 날짜 기록은 새 기록의 날짜 보정 기준이 되지 않는다', () => {
+    const s = new TankSession(freeConfig());
+    s.addEntry(entry(1, '2026-11-13'), T0);
+    const mistake = s.addEntry(entry(2, '2026-11-20'), T0 + H); // 날짜를 잘못 넣음
+    expect(s.deleteEntry(mistake.entry.id, T0 + 2 * H).mode).toBe('discarded');
+    const real = s.addEntry(entry(3, '2026-11-14'), T0 + 3 * H);
+    expect(real.entry.localDate).toBe('2026-11-14');
+    expect(s.lastActivityDate()).toBe('2026-11-14');
+    expect(s.head.ledger.lastEntryDate).toBe('2026-11-14');
+    expect(s.checkInvariants({ deep: true })).toEqual([]);
+  });
+
+  it('폐기 후 같은 날 다시 기록하면 그날 첫 기록으로 취급된다', () => {
+    const s = new TankSession(freeConfig());
+    s.addEntry(entry(1, '2026-11-13'), T0);
+    s.confirmHead('user', T0 + H);
+    const mistake = s.addEntry(entry(2, '2026-11-14'), T0 + 2 * H);
+    s.deleteEntry(mistake.entry.id, T0 + 3 * H);
+    const again = s.addEntry(entry(3, '2026-11-14'), T0 + 4 * H);
+    // 폐기한 기록의 스냅샷은 버려졌으므로 원장의 마지막 기록일은 11/13이고, 11/14 기록은 첫 기록이다
+    expect(again.snapshot.ledger.moodTrail.at(-1)).toMatchObject({ date: '2026-11-14', count: 1 });
+    expect(s.checkInvariants({ deep: true })).toEqual([]);
+  });
+
+  it('확정 후 숨긴 기록은 기록 흐름에 남아 날짜 보정 기준을 유지한다', () => {
+    const s = new TankSession(freeConfig());
+    s.addEntry(entry(1, '2026-11-13'), T0);
+    const later = s.addEntry(entry(2, '2026-11-20'), T0 + H);
+    s.confirmHead('user', T0 + 2 * H);
+    expect(s.deleteEntry(later.entry.id, T0 + 3 * H).mode).toBe('hidden');
+    const next = s.addEntry(entry(3, '2026-11-14'), T0 + 4 * H);
+    // 숨긴 기록의 스냅샷(11/20)이 어항에 남아 있으므로 날짜가 거꾸로 가지 않게 11/20으로 맞춘다
+    expect(next.entry.localDate).toBe('2026-11-20');
+    expect(s.checkInvariants({ deep: true })).toEqual([]);
+  });
+
+  it('폐기 기록이 섞인 무작위 순서에서도 I4 검사가 통과한다', () => {
+    const s = new TankSession(freeConfig('discard-mix'));
+    let t = T0;
+    const dates = ['2026-11-13', '2026-11-25', '2026-11-14', '2026-11-30', '2026-11-15', '2026-11-16'];
+    dates.forEach((d, i) => {
+      const r = s.addEntry(entry(i + 1, d), (t += H));
+      if (i % 2 === 1) s.deleteEntry(r.entry.id, (t += H)); // 미래 날짜 기록은 곧바로 폐기
+    });
+    expect(s.entries.filter((e) => !e.deletedAt).map((e) => e.localDate)).toEqual(['2026-11-13', '2026-11-14', '2026-11-15']);
+    expect(s.checkInvariants({ deep: true })).toEqual([]);
+  });
+});

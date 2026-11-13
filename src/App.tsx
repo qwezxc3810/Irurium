@@ -54,7 +54,10 @@ export function App() {
   const [progress, setProgress] = useState('');
   const [chips, setChips] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const todaysCount = s.entries.filter((e) => !e.deletedAt && e.localDate === today).length;
+  /** 테스트용: 기록 날짜를 직접 지정(비우면 오늘). 시간대 이동·잘못 넣은 날짜 같은 예외를 화면에서 재현하기 위해. */
+  const [entryDate, setEntryDate] = useState('');
+  const todaysCount = s.entries.filter((e) => !e.deletedAt && e.localDate === (entryDate || today)).length;
+
   const preview = analyzeMood(chips, note);
 
   const save = useCallback((input: NewEntry, at: number) => {
@@ -80,8 +83,9 @@ export function App() {
     }
     const prev = s.displayProgress();
     if (value < prev && !window.confirm('지난 기록보다 작은 쪽수예요. 앞부분을 다시 읽었나요?')) return;
-    save({ clientId: crypto.randomUUID(), localDate: today, amount: Math.max(0, value - prev), progressValue: value, moodChips: chips, note }, now);
-    setNotice(null);
+    const wanted = entryDate || today;
+    const r = save({ clientId: crypto.randomUUID(), localDate: wanted, amount: Math.max(0, value - prev), progressValue: value, moodChips: chips, note }, now);
+    setNotice(r.entry.localDate !== wanted ? `마지막 기록(${r.entry.localDate})보다 이른 날짜라 ${r.entry.localDate}로 맞췄어요.` : null);
     setChips([]);
     setNote('');
   };
@@ -256,6 +260,9 @@ export function App() {
               </div>
             </div>
             <p className="hint">쉬는 날 이력: {s.restRules.map((r) => `${r.effectiveFrom}~ ${WEEKDAYS.filter((_, j) => (r.weekdays >> j) & 1).join('') || '없음'}`).join(' → ')}</p>
+            <label className="field">기록 날짜 직접 지정 (테스트용, 비우면 오늘)
+              <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
+            </label>
             <label className="check"><input type="checkbox" checked={reducedMotion} onChange={(e) => setReducedMotion(e.target.checked)} /> 동작 줄이기</label>
           </div>
 
@@ -316,7 +323,17 @@ function Timeline({ entries, session, now, onChange, onShow }: {
                   onShow(r.mode === 'recomputed' ? '고친 마음으로 다시 그렸어요' : '이미 수족관에 담긴 기록이라 어항은 그대로예요. 기록만 고쳤어요.', r.mode === 'recomputed' ? session.head.changes : []);
                   onChange();
                 }}>마음 고치기</button>
-                <button onClick={() => { if (window.confirm('이 기록을 지울까요?')) { session.deleteEntry(e.id, now); onChange(); } }}>삭제</button>
+                <button onClick={() => {
+                  if (!window.confirm('이 기록을 지울까요?')) return;
+                  const r = session.deleteEntry(e.id, now);
+                  onShow('기록을 지웠어요', [{
+                    level: 'info',
+                    text: r.mode === 'discarded'
+                      ? `#${e.seq}은 미확정 기록이라 어항이 직전 모습으로 돌아갔어요. 이 기록은 이끼와 날짜 계산에서도 빠져요.`
+                      : `#${e.seq}은 이미 수족관에 담긴 기록이라 어항은 그대로예요. 기록만 숨겼어요.`,
+                  }]);
+                  onChange();
+                }}>삭제</button>
               </div>
             )}
           </li>

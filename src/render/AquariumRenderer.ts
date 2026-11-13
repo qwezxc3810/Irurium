@@ -1,3 +1,5 @@
+// 엄격한 보안 정책(CSP)에서 eval 없이 셰이더 코드를 만들도록 PixiJS 대체 구현을 켠다(호스팅 환경 호환).
+import 'pixi.js/unsafe-eval';
 import { Application, Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { WORLD } from '../engine/config';
 import { mulberry32, seedFromString } from '../engine/random';
