@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AquariumCanvas, type AquariumCanvasHandle } from './ui/AquariumCanvas';
+import { useDialog, type AskOptions, type AskResult } from './ui/Dialog';
 import { BASE_CHIPS, analyzeMood } from './engine/mood';
 import { TankSession, type NewEntry } from './engine/session';
 import { littlePrinceConfig, littlePrinceEntries } from './engine/scenarios';
@@ -41,6 +42,7 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
   const demoTimer = useRef<number | null>(null);
+  const dialog = useDialog();
 
   const s = session.current;
   // 읽을 때마다 24시간 경과 확정을 반영한다(v0.3.2 보완서 2.5)
@@ -75,14 +77,17 @@ export function App() {
     return r;
   }, []);
 
-  const onSubmit = () => {
+  const onSubmit = async () => {
     const value = Number(progress);
     if (!Number.isFinite(value) || value <= 0) {
       setNotice('지금 읽은 쪽수를 적어 주세요. 활동량만 필수예요.');
       return;
     }
     const prev = s.displayProgress();
-    if (value < prev && !window.confirm('지난 기록보다 작은 쪽수예요. 앞부분을 다시 읽었나요?')) return;
+    if (value < prev) {
+      const r = await dialog.ask({ title: '지난 기록보다 작은 쪽수예요', message: '앞부분을 다시 읽었나요? 진행량은 줄어들지 않고 그대로 유지돼요.', confirmLabel: '네, 저장할게요' });
+      if (!r.ok) return;
+    }
     const wanted = entryDate || today;
     const r = save({ clientId: crypto.randomUUID(), localDate: wanted, amount: Math.max(0, value - prev), progressValue: value, moodChips: chips, note }, now);
     setNotice(r.entry.localDate !== wanted ? `마지막 기록(${r.entry.localDate})보다 이른 날짜라 ${r.entry.localDate}로 맞췄어요.` : null);
@@ -206,9 +211,10 @@ export function App() {
               <div className="row">
                 <button className="primary" onClick={() => { s.answerCompletion('finished', now); setLastChanges({ title: '어항이 완성됐어요', changes: s.head.changes }); bump(); }}>다 읽었어요</button>
                 <button onClick={() => { s.answerCompletion('not_yet', now); bump(); }}>아직이에요</button>
-                <button onClick={() => {
-                  const v = Number(window.prompt('이 어항의 총 쪽수', String(total ?? '')));
-                  if (v > 0) { s.fixTotal(v, now); bump(); }
+                <button onClick={async () => {
+                  const r = await dialog.ask({ title: '이 어항의 총 쪽수', message: '책 정보는 그대로 두고 이 어항의 목표만 바꿔요.', input: { defaultValue: String(total ?? ''), inputMode: 'numeric' }, confirmLabel: '바꾸기' });
+                  const v = Number(r.value);
+                  if (r.ok && v > 0) { s.fixTotal(v, now); bump(); }
                 }}>총 쪽수가 달라요</button>
               </div>
             </div>
@@ -268,7 +274,7 @@ export function App() {
 
           <div className="card">
             <h2>기록 목록</h2>
-            <Timeline entries={s.entries} session={s} now={now} onChange={bump} onShow={(title, changes) => setLastChanges({ title, changes })} />
+            <Timeline entries={s.entries} session={s} now={now} ask={dialog.ask} onChange={bump} onShow={(title, changes) => setLastChanges({ title, changes })} />
           </div>
 
           <div className="card">
@@ -294,12 +300,14 @@ export function App() {
           </div>
         </aside>
       </main>
+      {dialog.element}
     </div>
   );
 }
 
-function Timeline({ entries, session, now, onChange, onShow }: {
-  entries: readonly Entry[]; session: TankSession; now: number; onChange: () => void; onShow: (t: string, c: Change[]) => void;
+function Timeline({ entries, session, now, ask, onChange, onShow }: {
+  entries: readonly Entry[]; session: TankSession; now: number; ask: (o: AskOptions) => Promise<AskResult>;
+  onChange: () => void; onShow: (t: string, c: Change[]) => void;
 }) {
   if (entries.length === 0) return <p className="hint">아직 기록이 없어요.</p>;
   return (
@@ -316,15 +324,27 @@ function Timeline({ entries, session, now, onChange, onShow }: {
             {!e.deletedAt && (
               <div className="row small">
                 {snap && <button onClick={() => onShow(`#${e.seq} 기록의 변화`, snap.changes)}>변화 보기</button>}
-                <button onClick={() => {
-                  const c = window.prompt('고칠 마음 칩 (예: 따뜻함)', e.moodChips[0] ?? '');
-                  if (!c) return;
+                <button onClick={async () => {
+                  const snapNow = session.snapshotOfEntry(e.id);
+                  const a = await ask({
+                    title: `#${e.seq} 기록의 마음 고치기`,
+                    message: snapNow?.status === 'draft' ? '확정 전 기록이라 고친 마음으로 어항이 다시 그려져요.' : '이미 수족관에 담긴 기록이라 어항은 그대로이고 기록만 바뀌어요.',
+                    choices: BASE_CHIPS, confirmLabel: '고치기',
+                  });
+                  if (!a.ok || !a.value) return;
+                  const c = a.value;
                   const r = session.editEntry(e.id, { moodChips: [c] }, e.rev, now);
                   onShow(r.mode === 'recomputed' ? '고친 마음으로 다시 그렸어요' : '이미 수족관에 담긴 기록이라 어항은 그대로예요. 기록만 고쳤어요.', r.mode === 'recomputed' ? session.head.changes : []);
                   onChange();
                 }}>마음 고치기</button>
-                <button onClick={() => {
-                  if (!window.confirm('이 기록을 지울까요?')) return;
+                <button onClick={async () => {
+                  const draftNow = session.snapshotOfEntry(e.id)?.status === 'draft';
+                  const a = await ask({
+                    title: `#${e.seq} 기록을 지울까요?`,
+                    message: draftNow ? '미확정 기록이라 어항이 직전 모습으로 돌아가요.' : '이미 수족관에 담긴 기록이라 어항은 그대로이고 기록만 숨겨져요.',
+                    confirmLabel: '지우기',
+                  });
+                  if (!a.ok) return;
                   const r = session.deleteEntry(e.id, now);
                   onShow('기록을 지웠어요', [{
                     level: 'info',
