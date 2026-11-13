@@ -112,3 +112,16 @@ Photorealistic aquarium fish, [SPECIES], full body in exact side profile, head f
 | fish.foxfish 여우 물고기(완성 대표) | 버터플라이 비단잉어 | fish/foxfish.webp (768×335) | 210 | 0.07 / 0.6 |
 
 원본 투명 PNG는 `art/originals/fish/`. 지느러미가 큰 베타·비단잉어는 휘는 정도를 낮게(0.06~0.07) 잡아야 지느러미가 과하게 출렁이지 않습니다. 베타는 190으로 키워 보면 한 장면에선 보기 좋지만, 200일 어항에서 3마리가 최대 1.5배로 자라면 화면을 많이 가려 170으로 두었습니다.
+
+### 적용된 세미 리얼 수초·수석 (2026-11-13)
+
+| 요소 | 실물 | 앱용 파일 | 크기 키 | 흔들림 |
+| --- | --- | --- | --- | --- |
+| plant.stem 모래풀 | 발리스네리아 | plants/stem.webp (263×640) | displayHeight 240 | 0.06 / 0.35 |
+| plant.leafy 잎 풍성한 수초 | 루드위지아 | plants/leafy.webp (307×640) | displayHeight 220 | 0.04 / 0.30 |
+| plant.foxtail 여우꼬리풀 | 미리오필룸 | plants/foxtail.webp (291×640) | displayHeight 230 | 0.05 / 0.40 |
+| rock.round 둥근 수석 | 둥근 강돌 무리 | rocks/round.webp (640×380) | displayWidth 140 | - |
+| rock.sharp 모난 수석 | 청회색 산석 | rocks/sharp.webp (640×415) | displayWidth 140 | - |
+
+- 생성 도구가 수초에 **뿌리**까지 그려 주는 경우가 많습니다. 앱은 수초를 모래 위에 세우므로(기준점 = 아래 가운데) 줄기가 뿌리로 바뀌는 높이에서 잘라 내고, 잘린 밑동 아래 10px만 살짝 투명하게 처리했습니다. 원본(뿌리 포함)은 `art/originals/plants/`에 있습니다.
+- 다음에 수초를 요청할 때는 "뿌리 없이, 줄기 밑동에서 끝나게"라고 덧붙이면 손질이 줄어듭니다.

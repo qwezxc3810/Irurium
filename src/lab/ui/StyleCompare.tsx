@@ -23,12 +23,17 @@ const VARIANTS: Variant[] = [
 type LightMode = 'as-is' | 'neutral' | 'warm' | 'cool';
 const LIGHTS: Array<[LightMode, string]> = [['as-is', '기록 그대로'], ['neutral', '조명 없음'], ['warm', '따뜻하게'], ['cool', '차갑게']];
 
-/** 세미 리얼로 바꾸기 전 임시 SVG 물고기 설정(비교용) */
+/** 세미 리얼로 바꾸기 전 임시 SVG 설정(물고기·수초·수석, 비교용) */
 const PREVIOUS_SVG: AssetOverrides = {
   'fish.goldfish': { src: 'fish/goldfish.svg', displayWidth: 130, swim: { amplitude: 0.12, frequency: 0.8 } },
   'fish.medaka': { src: 'fish/medaka.svg', displayWidth: 96, swim: { amplitude: 0.1, frequency: 1.0 } },
   'fish.bluefin': { src: 'fish/bluefin.svg', displayWidth: 100, swim: { amplitude: 0.09, frequency: 0.9 } },
   'fish.foxfish': { src: 'fish/foxfish.svg', displayWidth: 150, swim: { amplitude: 0.12, frequency: 0.7 } },
+  'plant.stem': { src: 'plants/stem.svg', displayHeight: 220, sway: { amplitude: 0.06, frequency: 0.35 } },
+  'plant.leafy': { src: 'plants/leafy.svg', displayHeight: 200, sway: { amplitude: 0.05, frequency: 0.3 } },
+  'plant.foxtail': { src: 'plants/foxtail.svg', displayHeight: 210, sway: { amplitude: 0.07, frequency: 0.4 } },
+  'rock.round': { src: 'rocks/round.svg', displayWidth: 130 },
+  'rock.sharp': { src: 'rocks/sharp.svg', displayWidth: 130 },
 };
 
 /** 물고기 4종을 한눈에 보는 시험 장면(엔진 결과가 아님) */
@@ -41,8 +46,11 @@ function allFish(): TankState {
       { id: 'f3', el: 'fish.bluefin', kind: 'fish', layer: 'mid', x: 300, y: 330, scale: 1.0, tint: 0, bornSeq: 3 },
       { id: 'f4', el: 'fish.medaka', kind: 'fish', layer: 'mid', x: 620, y: 140, scale: 1.0, tint: 0, bornSeq: 4 },
       { id: 'f5', el: 'fish.medaka', kind: 'fish', layer: 'mid', x: 760, y: 380, scale: 1.0, tint: 0, bornSeq: 5 },
-      { id: 'p1', el: 'plant.leafy', kind: 'plant', layer: 'back', x: 160, y: 505, scale: 1.1, tint: 0, bornSeq: 6 },
-      { id: 'r1', el: 'rock.sharp', kind: 'rock', layer: 'floor', x: 520, y: 522, scale: 1.0, tint: 0, bornSeq: 7 },
+      { id: 'p1', el: 'plant.leafy', kind: 'plant', layer: 'back', x: 120, y: 505, scale: 1.0, tint: 0, bornSeq: 6 },
+      { id: 'p2', el: 'plant.stem', kind: 'plant', layer: 'back', x: 880, y: 505, scale: 1.0, tint: 0, bornSeq: 7 },
+      { id: 'p3', el: 'plant.foxtail', kind: 'plant', layer: 'back', x: 230, y: 505, scale: 0.9, tint: 0, bornSeq: 8 },
+      { id: 'r1', el: 'rock.sharp', kind: 'rock', layer: 'floor', x: 520, y: 522, scale: 1.0, tint: 0, bornSeq: 9 },
+      { id: 'r2', el: 'rock.round', kind: 'rock', layer: 'floor', x: 720, y: 522, scale: 1.0, tint: 0, bornSeq: 10 },
     ],
   };
 }
@@ -69,7 +77,7 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
       return frameAt(r, r.frames.length).state;
     };
     return [
-      { id: 'all', name: '물고기 4종(시험 장면)', state: allFish() },
+      { id: 'all', name: '물고기 4종 + 수초·수석(시험 장면)', state: allFish() },
       { id: 'close', name: '금붕어 클로즈업(시험 장면)', state: closeUp() },
       { id: 'C', name: '어린왕자 14일 완성(사례 C)', state: last('case-C', 'C') },
       { id: 'warm', name: '따뜻함 14일', state: last('cmp-emotion', 'CE1') },
@@ -97,7 +105,7 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
       <section className="card notice">
         <OriginBadge origin="sample" />
         <p>같은 어항 상태를 세 가지 금붕어 그림으로 나란히 움직여 봐요. 엔진 결과는 셋 다 똑같고 <b>그림만</b> 달라요. 2026-11-13 기획자 결정으로 <b>세미 리얼</b>을 앱(manifest.json)에 적용했어요. 세미 리얼 칸은 앱과 같은 설정(크기 180, 휘는 정도 0.08)이에요.</p>
-        <p className="hint">물고기 4종(금붕어·송사리·푸른 밤 물고기·여우 물고기)은 세미 리얼로 바뀌었고, 수초·수석·배경은 아직 임시 SVG예요. "이전(임시 SVG)" 칸은 물고기 4종 모두 예전 그림이고, "실사" 칸은 금붕어만 실사로 바꿔 보여 줘요.</p>
+        <p className="hint">물고기 4종과 수초 3종·수석 2종은 세미 리얼로 바뀌었고, 배경·바닥·상징(장미 산호·모래 등불)은 아직 임시 SVG예요. "이전(임시 SVG)" 칸은 물고기·수초·수석 모두 예전 그림이고, "실사" 칸은 금붕어만 실사로 바꿔 보여 줘요.</p>
       </section>
       <section className="card">
         <div className="field">장면
