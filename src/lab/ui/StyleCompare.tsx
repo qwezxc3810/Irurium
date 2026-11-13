@@ -15,9 +15,9 @@ import { OriginBadge } from './components';
 interface Variant { id: string; name: string; note: string; src: string | null }
 
 const VARIANTS: Variant[] = [
-  { id: 'svg', name: '지금(임시 SVG)', note: '비교 기준', src: null },
+  { id: 'svg', name: '이전(임시 SVG)', note: '비교 기준', src: 'fish/goldfish.svg' },
   { id: 'real', name: '실사', note: 'ChatGPT 생성 ①', src: 'fish/goldfish-real.webp' },
-  { id: 'semi', name: '세미 리얼', note: 'ChatGPT 생성 ②', src: 'fish/goldfish-semi.webp' },
+  { id: 'semi', name: '세미 리얼', note: '선택됨 · 앱에 적용', src: null },
 ];
 
 type LightMode = 'as-is' | 'neutral' | 'warm' | 'cool';
@@ -71,7 +71,7 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
     <div className="stack">
       <section className="card notice">
         <OriginBadge origin="sample" />
-        <p>같은 어항 상태를 세 가지 금붕어 그림으로 나란히 움직여 봐요. 엔진 결과는 셋 다 똑같고 <b>그림만</b> 달라요. 앱 설정(manifest.json)은 아직 바꾸지 않았어요 — 고르시면 그때 반영해요.</p>
+        <p>같은 어항 상태를 세 가지 금붕어 그림으로 나란히 움직여 봐요. 엔진 결과는 셋 다 똑같고 <b>그림만</b> 달라요. 2026-11-13 기획자 결정으로 <b>세미 리얼</b>을 앱(manifest.json)에 적용했어요. 세미 리얼 칸은 앱과 같은 설정(크기 180, 휘는 정도 0.08)이에요.</p>
         <p className="hint">금붕어 외 물고기·수초·수석·배경은 아직 임시 SVG라 섞여 보여요. 스타일 판단은 금붕어만 보고 해 주세요.</p>
       </section>
       <section className="card">
@@ -82,7 +82,7 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
           <div className="chips">{LIGHTS.map(([id, name]) => <button key={id} className={id === light ? 'chip on' : 'chip'} onClick={() => setLight(id)}>{name}</button>)}</div>
         </div>
         <div className="row">
-          <label className="check">실사·세미 리얼 크기 {width}
+          <label className="check">실사 크기 {width}
             <input type="range" min={120} max={260} step={10} value={width} onChange={(e) => setWidth(Number(e.target.value))} />
           </label>
           <label className="check">헤엄칠 때 휘는 정도 {amp.toFixed(2)}
@@ -90,11 +90,15 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
           </label>
           <button onClick={() => setApplied({ width, amp })} disabled={applied.width === width && applied.amp === amp}>적용</button>
         </div>
-        <p className="hint">이 장면의 금붕어 {goldfish}마리. 크기·휘는 정도는 실사·세미 리얼에만 적용돼요(적용하면 그림을 다시 불러와요).</p>
+        <p className="hint">이 장면의 금붕어 {goldfish}마리. 크기·휘는 정도는 실사 칸에만 적용돼요(적용하면 그림을 다시 불러와요). 세미 리얼 칸은 앱 설정 그대로예요.</p>
       </section>
       <div className="style-grid">
         {VARIANTS.map((v) => {
-          const overrides: AssetOverrides | undefined = v.src ? { 'fish.goldfish': { src: v.src, displayWidth: applied.width, swim: { amplitude: applied.amp, frequency: 0.7 } } } : undefined;
+          // 세미 리얼은 manifest.json 값 그대로(앱과 같은 모습). 나머지는 덮어쓰기로 비교한다.
+          const overrides: AssetOverrides | undefined =
+            v.id === 'svg' ? { 'fish.goldfish': { src: 'fish/goldfish.svg', displayWidth: 130, swim: { amplitude: 0.12, frequency: 0.8 } } }
+            : v.src ? { 'fish.goldfish': { src: v.src, displayWidth: applied.width, swim: { amplitude: applied.amp, frequency: 0.7 } } }
+            : undefined;
           return (
             <section key={v.id} className="card style-card">
               <div className="row spread"><h2 style={{ margin: 0 }}>{v.name}</h2><span className="hint" style={{ margin: 0 }}>{v.note}</span></div>
