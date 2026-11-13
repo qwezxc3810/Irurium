@@ -125,3 +125,14 @@ Photorealistic aquarium fish, [SPECIES], full body in exact side profile, head f
 
 - 생성 도구가 수초에 **뿌리**까지 그려 주는 경우가 많습니다. 앱은 수초를 모래 위에 세우므로(기준점 = 아래 가운데) 줄기가 뿌리로 바뀌는 높이에서 잘라 내고, 잘린 밑동 아래 10px만 살짝 투명하게 처리했습니다. 원본(뿌리 포함)은 `art/originals/plants/`에 있습니다.
 - 다음에 수초를 요청할 때는 "뿌리 없이, 줄기 밑동에서 끝나게"라고 덧붙이면 손질이 줄어듭니다.
+
+### 적용된 세미 리얼 배경·바닥·상징 (2026-11-13) — 임시 SVG 전부 교체 완료
+
+| 요소 | 앱용 파일 | 크기 | 손질 |
+| --- | --- | --- | --- |
+| 배경(별빛 사막 물속) | themes/starlit-desert/background.webp (1600×960, 30KB) | 고정(1000×600에 꽉 참) | 원본 1619×971(5:3) 그대로 축소 |
+| 바닥(모래) | themes/starlit-desert/floor.webp (2000×280, 150KB) | 고정(아래 140) | 원본 2172×724에서 모래 띠(아래 244px)만 잘라 2000×280으로 |
+| symbol.rose-coral 장미 산호 | symbols/rose-coral.webp (535×640) | displayHeight 135 | 여백 정리 |
+| symbol.sand-lantern 모래 등불 | symbols/sand-lantern.webp (437×640) | displayHeight 120 | 여백 정리 |
+
+- 검증실 물빛 색감 지표의 기준 물색도 새 배경 가운데 평균색 `#043877`로 바꿨습니다(엔진과 무관한 표시용 지표).

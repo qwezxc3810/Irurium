@@ -27,8 +27,8 @@ export function stageOf(fillPct: number): { stage: number; name: string } {
   return { stage: s.stage, name: s.name };
 }
 
-/** 배경 물색(테마 배경 그라데이션 중간색 #16324F)에 렌더러의 감정 조명을 겹친 색. AquariumRenderer.drawLight와 같은 공식. */
-const WATER = [0x16, 0x32, 0x4f] as const;
+/** 배경 물색(테마 세미 리얼 배경의 가운데 평균색 #043877)에 렌더러의 감정 조명을 겹친 색. AquariumRenderer.drawLight와 같은 공식. */
+const WATER = [0x04, 0x38, 0x77] as const;
 const WARM = [0xf5, 0x9e, 0x0b] as const;
 const COOL = [0x38, 0xbd, 0xf8] as const;
 

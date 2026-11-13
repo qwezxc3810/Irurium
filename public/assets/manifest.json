@@ -3,8 +3,8 @@
   "version": 1,
   "themes": {
     "starlit-desert": {
-      "background": "themes/starlit-desert/background.svg",
-      "floor": "themes/starlit-desert/floor.svg"
+      "background": "themes/starlit-desert/background.webp",
+      "floor": "themes/starlit-desert/floor.webp"
     }
   },
   "elements": {
@@ -73,12 +73,12 @@
       "displayWidth": 140
     },
     "symbol.rose-coral": {
-      "src": "symbols/rose-coral.svg",
-      "displayHeight": 130
+      "src": "symbols/rose-coral.webp",
+      "displayHeight": 135
     },
     "symbol.sand-lantern": {
-      "src": "symbols/sand-lantern.svg",
-      "displayHeight": 130
+      "src": "symbols/sand-lantern.webp",
+      "displayHeight": 120
     }
   },
   "fx": {
