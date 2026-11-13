@@ -101,3 +101,14 @@ Photorealistic aquarium fish, [SPECIES], full body in exact side profile, head f
 - 비교용으로 `fish/goldfish-real.webp`(실사)와 `fish/goldfish.svg`(이전 임시)를 남겨 두고, 검증실 "그래픽 비교" 탭에서 볼 수 있습니다.
 - 지느러미가 긴 어종은 그림 폭에 지느러미가 포함되므로 `displayWidth`를 몸통 기준보다 크게(금붕어 약 180) 잡고, 휘는 정도(`swim.amplitude`)는 0.06~0.09가 자연스럽습니다.
 - 휴대폰 용량을 위해 물고기는 가로 768px 안팎 WebP를 권장합니다.
+
+### 적용된 세미 리얼 물고기 (2026-11-13)
+
+| 요소 | 어종 | 앱용 파일 | displayWidth | swim (amplitude / frequency) |
+| --- | --- | --- | --- | --- |
+| fish.goldfish 노을 금붕어 | 류킨 금붕어 | fish/goldfish-semi.webp (768×433) | 180 | 0.08 / 0.7 |
+| fish.medaka 모래빛 송사리 | 황금 송사리 | fish/medaka.webp (768×248) | 112 | 0.10 / 1.1 |
+| fish.bluefin 푸른 밤 물고기 | 하프문 베타 | fish/bluefin.webp (768×415) | 170 | 0.06 / 0.6 |
+| fish.foxfish 여우 물고기(완성 대표) | 버터플라이 비단잉어 | fish/foxfish.webp (768×335) | 210 | 0.07 / 0.6 |
+
+원본 투명 PNG는 `art/originals/fish/`. 지느러미가 큰 베타·비단잉어는 휘는 정도를 낮게(0.06~0.07) 잡아야 지느러미가 과하게 출렁이지 않습니다. 베타는 190으로 키워 보면 한 장면에선 보기 좋지만, 200일 어항에서 3마리가 최대 1.5배로 자라면 화면을 많이 가려 170으로 두었습니다.

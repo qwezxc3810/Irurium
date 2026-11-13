@@ -9,11 +9,11 @@
   },
   "elements": {
     "fish.medaka": {
-      "src": "fish/medaka.svg",
-      "displayWidth": 96,
+      "src": "fish/medaka.webp",
+      "displayWidth": 112,
       "swim": {
         "amplitude": 0.1,
-        "frequency": 1.0
+        "frequency": 1.1
       }
     },
     "fish.goldfish": {
@@ -25,19 +25,19 @@
       }
     },
     "fish.bluefin": {
-      "src": "fish/bluefin.svg",
-      "displayWidth": 100,
+      "src": "fish/bluefin.webp",
+      "displayWidth": 170,
       "swim": {
-        "amplitude": 0.09,
-        "frequency": 0.9
+        "amplitude": 0.06,
+        "frequency": 0.6
       }
     },
     "fish.foxfish": {
-      "src": "fish/foxfish.svg",
-      "displayWidth": 150,
+      "src": "fish/foxfish.webp",
+      "displayWidth": 210,
       "swim": {
-        "amplitude": 0.12,
-        "frequency": 0.7
+        "amplitude": 0.07,
+        "frequency": 0.6
       }
     },
     "plant.stem": {
