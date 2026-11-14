@@ -4,7 +4,7 @@ import { GOLDEN_REPLAY } from '../../engine/__tests__/golden';
 import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios';
 import { TankSession } from '../../engine/session';
 import { frameAt, runSuite } from '../../lab/runner';
-import { PERF_SCENES } from '../../lab/ui/PerfTab';
+import { PERF_SCENES } from '../../lab/perfScenes';
 import { QUALITY, qualityResolution } from '../../render/quality';
 import { detectEnvironment, sourceLabel } from '../env';
 import { computeFrameStats } from '../frameStats';
