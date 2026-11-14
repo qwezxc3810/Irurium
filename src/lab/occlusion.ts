@@ -10,7 +10,7 @@ import { frameAt, type SuiteResult } from './runner';
 
 export const OCCLUSION_TARGET = { effectiveCover: 0.1, plantTopMin: 150 } as const;
 
-/** 이슈 #9 기준(초안): 물고기 헤엄 띠 겹침 25% 미만. 엔진 0.2.0의 헤엄 공간 예산으로 맞춘다 */
+/** 이슈 #9 기준(초안): 물고기 헤엄 띠 겹침 25% 미만. 엔진 0.2.0의 헤엄 공간 예산(배율 1.4)으로 맞춘다 */
 export const FISH_BAND_TARGET = 0.25;
 
 /**

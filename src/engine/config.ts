@@ -16,7 +16,7 @@ export const EFFECT_CAP = 2;
  * 헤엄 띠 높이의 maxFill배를 넘지 않게 한다. 넘으면 새 물고기 대신 다른 종류가 생기거나 다른 생물이 자란다.
  * 0.2.0에서 추가. 그 전 스냅샷은 그대로 둔다.
  */
-export const FISH_SPACE = { bandHeight: 330, maxFill: 1.2 } as const;
+export const FISH_SPACE = { bandHeight: 330, maxFill: 1.4 } as const;
 
 /** H3: 조명 이동 비율 */
 export const LIGHT_SHIFT = { first: 0.15, extra: 0.1, dayMax: 0.3 } as const;
