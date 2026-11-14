@@ -3,6 +3,13 @@ import 'pixi.js/unsafe-eval';
 import { Application, ColorMatrixFilter, Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { lightGrade } from './lighting';
 import { glowTexture, makeLightRays, makeStar, type FxView } from './proceduralFx';
+
+/** 코드로 그리는 효과 목록(명시적 등록). 새 효과는 여기에 추가한다 */
+const PROCEDURAL_FX: Record<string, () => FxView> = {
+  'fx.lightray': makeLightRays,
+  'fx.stars-bright': makeStar,
+};
+const warnedFx = new Set<string>();
 import { WORLD } from '../engine/config';
 import { mulberry32, seedFromString } from '../engine/random';
 import type { PlacedObject, TankState } from '../engine/types';
@@ -38,6 +45,8 @@ interface Bubble { s: Sprite; vy: number; wobble: number; phase: number }
 export class AquariumRenderer {
   private app = new Application();
   private world = new Container();
+  /** 감정 조명 색 보정을 받는 장면(배경~빛). 유리·이끼(glass)는 밖에 두어 감정에 따라 이끼 색이 바뀌지 않게 한다 */
+  private scene = new Container();
   private layers = {
     background: new Container(),
     back: new Container(),
@@ -104,7 +113,8 @@ export class AquariumRenderer {
     if (this.destroyed) { this.app.destroy(true); return []; }
     if (host && !this.still) host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.world);
-    for (const layer of Object.values(this.layers)) this.world.addChild(layer);
+    this.world.addChild(this.scene);
+    for (const [name, layer] of Object.entries(this.layers)) (name === 'glass' ? this.world : this.scene).addChild(layer);
 
     // 수조 영역 밖으로 그려지지 않게 자른다
     const clip = new Graphics().roundRect(0, 0, WORLD.width, WORLD.height, 18).fill({ color: 0xffffff });
@@ -122,7 +132,7 @@ export class AquariumRenderer {
       this.glow.blendMode = 'add';
       this.glow.alpha = 0;
       this.layers.light.addChild(this.glow);
-      this.world.filters = [this.grade];
+      this.scene.filters = [this.grade];
     }
     this.moss.addChild(this.mossGraphics);
     this.moss.mask = this.mossMask;
@@ -299,8 +309,15 @@ export class AquariumRenderer {
     for (const id of effects) {
       if (this.fxViews.has(id)) continue;
       let fx: FxView | null = null;
-      if (!this.legacyLighting) fx = id === 'fx.lightray' ? makeLightRays() : makeStar();
-      else {
+      if (!this.legacyLighting) {
+        const make = PROCEDURAL_FX[id];
+        if (!make) {
+          // 모르는 효과는 엉뚱한 그림(별 등)으로 그리지 않고 건너뛴다
+          if (!warnedFx.has(id)) { warnedFx.add(id); console.warn(`[irurium] 지원하지 않는 효과라 그리지 않아요: ${id}`); }
+          continue;
+        }
+        fx = make();
+      } else {
         const tex = this.tex(id);
         if (!tex) continue;
         const s = new Sprite(tex);

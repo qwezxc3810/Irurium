@@ -29,7 +29,8 @@ export function stageOf(fillPct: number): { stage: number; name: string } {
 }
 
 /**
- * 화면 평균 물빛: 세미 리얼 배경의 가운데 평균색 #043877에 렌더러와 같은 감정 조명 색 보정(src/render/lighting.ts)을 적용한 색.
+ * 화면 평균 물빛(근사 지표): 세미 리얼 배경의 가운데 평균색 #043877에 렌더러와 같은 감정 조명 색 보정 규칙(src/render/lighting.ts)을 적용한 색.
+ * 가산 빛 기여는 화면 평균 35%로 가정한 값이라 실제 프레임 픽셀 평균과는 다를 수 있다.
  * (이전 방식은 호박색/하늘색 덧칠이었고 legacyWater로 비교할 수 있다)
  */
 export const WATER = [0x04, 0x38, 0x77] as const;

@@ -59,7 +59,10 @@ export function applyGrade(rgb: readonly [number, number, number], g: LightGrade
   return out.map(Math.round) as [number, number, number];
 }
 
-/** 화면 평균 물빛(검증용): 보정한 물색 + 가산 빛의 평균 기여(빛은 왼쪽 위에서 퍼지므로 화면 평균으로 약 35%) */
+/**
+ * 화면 평균 물빛(검증용 근사 지표): 렌더러와 같은 색 보정 규칙을 배경 대표색에 적용하고, 가산 빛의 화면 평균 기여를 35%로 가정해 더한다.
+ * 35%는 왼쪽 위에서 퍼지는 빛의 대략적인 평균값이며, 실제 렌더링 프레임의 픽셀 평균과 같다고 보장하지 않는다.
+ */
 export function gradedWater(water: readonly [number, number, number], light: Light): [number, number, number] {
   const g = lightGrade(light);
   const base = applyGrade(water, g);
