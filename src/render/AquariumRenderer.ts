@@ -3,6 +3,7 @@ import 'pixi.js/unsafe-eval';
 import { Application, ColorMatrixFilter, Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { lightGrade } from './lighting';
 import { glowTexture, makeLightRays, makeStar, type FxView } from './proceduralFx';
+import { QUALITY, qualityResolution, type RenderQuality } from './quality';
 
 /** 코드로 그리는 효과 목록(명시적 등록). 새 효과는 여기에 추가한다 */
 const PROCEDURAL_FX: Record<string, () => FxView> = {
@@ -81,14 +82,17 @@ export class AquariumRenderer {
   private destroyed = false;
 
   private still = false;
+  /** 렌더링 품질(모바일 성능 검증). 그리는 방식만 바꾸고 상태·개수는 바꾸지 않는다 */
+  private quality: RenderQuality = 'normal';
 
   /**
    * PixiJS를 시작하고 매니페스트의 그림을 불러온다. 불러오지 못한 파일 목록을 돌려준다.
    * still을 주면 화면에 붙이지 않고 고정 크기로 만들어, renderStill()로 정지 그림만 뽑는다(검증실 갤러리).
    */
-  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number }; overrides?: AssetOverrides; legacyLighting?: boolean } = {}): Promise<string[]> {
+  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number }; overrides?: AssetOverrides; legacyLighting?: boolean; quality?: RenderQuality } = {}): Promise<string[]> {
     this.still = !!opts.still;
     this.legacyLighting = !!opts.legacyLighting;
+    this.quality = opts.quality ?? this.quality;
     if (opts.still) {
       await this.app.init({
         width: opts.still.width,
@@ -105,7 +109,7 @@ export class AquariumRenderer {
         backgroundAlpha: 0,
         antialias: true,
         autoDensity: true,
-        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        resolution: qualityResolution(this.quality, window.devicePixelRatio || 1),
       });
     }
     if (this.destroyed) { this.app.destroy(true); return []; }
@@ -132,7 +136,7 @@ export class AquariumRenderer {
       this.glow.blendMode = 'add';
       this.glow.alpha = 0;
       this.layers.light.addChild(this.glow);
-      this.scene.filters = [this.grade];
+      this.applyQualityEffects();
     }
     this.moss.addChild(this.mossGraphics);
     this.moss.mask = this.mossMask;
@@ -163,6 +167,44 @@ export class AquariumRenderer {
 
   private tex(key: string): Texture | undefined {
     return this.assets.textures.get(key);
+  }
+
+  /** 일반 ↔ 저사양을 같은 어항에서 바로 바꾼다. 해상도·색 보정·가산 빛·기포·반짝임만 바뀐다 */
+  setQuality(q: RenderQuality) {
+    if (q === this.quality) return;
+    this.quality = q;
+    if (!this.ready || this.still) return;
+    this.app.renderer.resolution = qualityResolution(q, window.devicePixelRatio || 1);
+    this.layout();
+    this.applyQualityEffects();
+    if (this.state) this.drawLight(this.state);
+    const max = QUALITY[q].maxBubbles;
+    while (this.bubbles.length > max) this.bubbles.shift()!.s.destroy();
+  }
+
+  private applyQualityEffects() {
+    if (this.legacyLighting) return;
+    const spec = QUALITY[this.quality];
+    this.scene.filters = spec.colorGrade ? [this.grade] : [];
+    if (this.glow) this.glow.visible = spec.glow;
+  }
+
+  /** 성능 측정용: 실제 렌더링 해상도·캔버스 크기와 화면에 그리고 있는 생물 수 */
+  info() {
+    const r = this.app.renderer;
+    const c = this.app.canvas;
+    const kinds = { fish: this.fish.size, plant: 0, rock: 0, symbol: 0 };
+    for (const v of this.statics.values()) if (v.obj.kind !== 'fish') kinds[v.obj.kind]++;
+    return {
+      quality: this.quality,
+      dpr: window.devicePixelRatio || 1,
+      resolution: r.resolution,
+      canvasCss: [Math.round(r.screen.width), Math.round(r.screen.height)] as [number, number],
+      canvasPx: [c.width, c.height] as [number, number],
+      backend: r.name ?? (r.type === 1 ? 'webgl' : r.type === 2 ? 'webgpu' : 'canvas'),
+      drawn: kinds,
+      bubbles: this.bubbles.length,
+    };
   }
 
   setState(state: TankState, opts: RenderOptions) {
@@ -295,6 +337,11 @@ export class AquariumRenderer {
       this.lightOverlay.rect(0, 0, WORLD.width, WORLD.height).fill({ color: t > 0 ? 0xf59e0b : 0x38bdf8, alpha: Math.min(0.28, Math.abs(t) * 0.3) });
       return;
     }
+    if (!QUALITY[this.quality].colorGrade) {
+      // 저사양: 색 보정 필터 대신 덧칠 한 장(감정 방향은 보이게, 비용은 작게)
+      if (Math.abs(t) >= 0.01) this.lightOverlay.rect(0, 0, WORLD.width, WORLD.height).fill({ color: t > 0 ? 0xf59e0b : 0x38bdf8, alpha: Math.min(0.2, Math.abs(t) * 0.22) });
+      return;
+    }
     const g = lightGrade(state.light);
     this.grade.matrix = g.matrix as unknown as ColorMatrixFilter['matrix'];
     if (this.glow) {
@@ -372,7 +419,8 @@ export class AquariumRenderer {
       const sway = this.assets.manifest.elements[v.obj.el]?.sway;
       v.sprite.skew.x = sway && !rm ? sway.amplitude * Math.sin(this.time * sway.frequency * Math.PI * 2 + v.swayPhase) : 0;
     }
-    for (const fx of this.fxViews.values()) fx.tick(this.time, rm);
+    const calm = rm || !QUALITY[this.quality].shimmer;
+    for (const fx of this.fxViews.values()) fx.tick(this.time, calm);
     if (!rm) this.tickBubbles(dt);
     if (this.wipe) this.tickWipe(dt);
   }
@@ -382,7 +430,7 @@ export class AquariumRenderer {
     const rate = 0.8 + Math.max(0, energy - 1) * 3; // 활발할수록 기포가 많다
     this.bubbleTimer -= dt;
     const tex = this.tex('bubble');
-    if (tex && this.bubbleTimer <= 0 && this.bubbles.length < 24) {
+    if (tex && this.bubbleTimer <= 0 && this.bubbles.length < QUALITY[this.quality].maxBubbles) {
       this.bubbleTimer = 1 / rate;
       const s = new Sprite(tex);
       s.anchor.set(0.5);
