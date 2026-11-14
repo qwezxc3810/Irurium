@@ -2,7 +2,7 @@
  * 엔진 수치. 전부 [가설]이다(v0.3.1 수정 노트 6장 H1~H11).
  * 0단계 시뮬레이터로 측정한 뒤 바꾸고, 바꾸면 ENGINE_VERSION을 올린다.
  */
-export const ENGINE_VERSION = '0.1.0';
+export const ENGINE_VERSION = '0.2.0';
 
 /** 논리 좌표. 렌더러가 화면 크기에 맞춰 늘린다. */
 export const WORLD = { width: 1000, height: 600, floorY: 500 } as const;
@@ -10,6 +10,13 @@ export const WORLD = { width: 1000, height: 600, floorY: 500 } as const;
 /** H8: 종류별 개수 상한 */
 export const CAPS = { fish: 12, plant: 10, rock: 6, symbol: 4 } as const;
 export const EFFECT_CAP = 2;
+
+/**
+ * 이슈 #9: 물고기 헤엄 공간 예산. 물고기 몸 높이(카탈로그 bodyHeight × 크기 배율) 합이
+ * 헤엄 띠 높이의 maxFill배를 넘지 않게 한다. 넘으면 새 물고기 대신 다른 종류가 생기거나 다른 생물이 자란다.
+ * 0.2.0에서 추가. 그 전 스냅샷은 그대로 둔다.
+ */
+export const FISH_SPACE = { bandHeight: 330, maxFill: 1.4 } as const;
 
 /** H3: 조명 이동 비율 */
 export const LIGHT_SHIFT = { first: 0.15, extra: 0.1, dayMax: 0.3 } as const;

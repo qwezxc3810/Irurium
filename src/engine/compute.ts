@@ -1,4 +1,4 @@
-import { CAPS, EFFECT_CAP, ENGINE_VERSION, GROWTH, LIGHT_SHIFT, SCORE, SLOTS, SPECIAL } from './config';
+import { CAPS, EFFECT_CAP, ENGINE_VERSION, FISH_SPACE, GROWTH, LIGHT_SHIFT, SCORE, SLOTS, SPECIAL } from './config';
 import { EFFECTS, elementOf, themeOf, type ElementDef } from './catalog';
 import { analyzeMood, clamp, round } from './mood';
 import { rngFor, type Rng } from './random';
@@ -108,14 +108,21 @@ export function computeFinale(base: { state: TankState; ledger: Ledger }, cfg: T
   const rng = rngFor(cfg.seed, seq, 99);
   const theme = themeOf(cfg.themeId);
   const finale = elementOf(cfg.themeId, theme.finaleElement);
-  if (finale && countKind(state, 'fish') < CAPS.fish) {
+  if (finale && countKind(state, 'fish') < CAPS.fish && fishFits(state, cfg.themeId, (finale.bodyHeight ?? 0) * finale.baseScale, false)) {
     const obj = placeNew(state, ledger, finale, rng, seq, state.light.temp);
     if (obj) changes.push({ level: 'finale', text: `${subj(finale.name)} 이 어항의 대표 생물이 되었어요`, objectId: obj.id });
   } else {
-    const biggest = [...state.objects].filter((o) => o.kind === 'fish').sort((a, b) => b.scale - a.scale)[0];
-    if (biggest) {
-      biggest.scale = round(Math.min(GROWTH.maxScale, biggest.scale + 0.2));
-      changes.push({ level: 'finale', text: '가장 오래 함께한 물고기가 대표 생물이 되었어요', objectId: biggest.id });
+    // 대표 생물이 들어갈 수 없으면(물고기 상한·헤엄 공간) 가장 먼저 태어난 물고기가 대표가 된다. 공간이 있을 때만 조금 자란다.
+    const oldest = [...state.objects].filter((o) => o.kind === 'fish').sort((a, b) => a.bornSeq - b.bornSeq || a.id.localeCompare(b.id))[0];
+    if (oldest) {
+      const grow = Math.min(GROWTH.maxScale, oldest.scale + 0.2) - oldest.scale;
+      const grew = grow > 0 && fishFits(state, cfg.themeId, (elementOf(cfg.themeId, oldest.el)?.bodyHeight ?? 0) * grow, false);
+      if (grew) oldest.scale = round(oldest.scale + grow);
+      changes.push({
+        level: 'finale',
+        text: grew ? '가장 오래 함께한 물고기가 대표 생물이 되어 조금 더 자랐어요' : '가장 오래 함께한 물고기가 대표 생물이 되었어요',
+        objectId: oldest.id,
+      });
     }
   }
   state.light = { temp: round(clamp(state.light.temp + 0.1)), energy: state.light.energy };
@@ -194,6 +201,26 @@ function countKind(state: TankState, kind: ObjectKind): number {
   return state.objects.filter((o) => o.kind === kind).length;
 }
 
+/** 이슈 #9: 물고기 몸 높이 합(크기 배율 반영) */
+function fishLoad(state: TankState, themeId: string): number {
+  let sum = 0;
+  for (const o of state.objects) if (o.kind === 'fish') sum += (elementOf(themeId, o.el)?.bodyHeight ?? 0) * o.scale;
+  return sum;
+}
+
+/**
+ * 이 만큼 물고기 몸 높이가 늘어도 헤엄 공간 예산 안인지.
+ * 일상 성장(daily)은 완성 때 나올 대표 생물 자리를 남겨 둔다. 그래야 완성 장면에서 대표 생물이 빠지지 않는다.
+ */
+function fishFits(state: TankState, themeId: string, extra: number, daily: boolean): boolean {
+  let budget = FISH_SPACE.bandHeight * FISH_SPACE.maxFill;
+  if (daily) {
+    const fin = elementOf(themeId, themeOf(themeId).finaleElement);
+    if (fin && fin.kind === 'fish') budget -= (fin.bodyHeight ?? 0) * fin.baseScale;
+  }
+  return fishLoad(state, themeId) + extra <= budget + 1e-9;
+}
+
 function countEl(state: TankState, el: string): number {
   return state.objects.filter((o) => o.el === el).length;
 }
@@ -203,7 +230,12 @@ function applyGrowth(state: TankState, ledger: Ledger, mood: MoodVec, cfg: TankC
   const history = trailAverage(ledger.moodTrail);
   const target = mood.confidence > 0 ? mood : { temp: state.light.temp, energy: state.light.energy };
   const candidates = theme.elements.filter(
-    (e) => !e.specialOnly && !e.finaleOnly && countEl(state, e.id) < e.maxPerTank && countKind(state, e.kind) < CAPS[e.kind],
+    (e) =>
+      !e.specialOnly &&
+      !e.finaleOnly &&
+      countEl(state, e.id) < e.maxPerTank &&
+      countKind(state, e.kind) < CAPS[e.kind] &&
+      (e.kind !== 'fish' || fishFits(state, cfg.themeId, (e.bodyHeight ?? 0) * e.baseScale, true)),
   );
   const scored = candidates
     .map((e) => {
@@ -229,7 +261,11 @@ function applyGrowth(state: TankState, ledger: Ledger, mood: MoodVec, cfg: TankC
 }
 
 function growExisting(state: TankState, ledger: Ledger, target: { temp: number; energy: number }, cfg: TankConfig, input: EngineInput, mood: MoodVec, changes: Change[]) {
-  const growable = state.objects.filter((o) => o.scale < GROWTH.maxScale);
+  const growable = state.objects.filter(
+    (o) =>
+      o.scale < GROWTH.maxScale &&
+      (o.kind !== 'fish' || fishFits(state, cfg.themeId, (elementOf(cfg.themeId, o.el)?.bodyHeight ?? 0) * GROWTH.step, true)),
+  );
   if (growable.length === 0) {
     changes.push({ level: 'growth', text: '어항이 가득 차서, 생물들의 색이 조금 깊어졌어요' });
     for (const o of state.objects) o.tint = round(clamp(o.tint + (target.temp - o.tint) * 0.1));

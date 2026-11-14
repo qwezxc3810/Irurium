@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { ENGINE_VERSION } from '../../engine/config';
+import { GOLDEN_REPLAY } from '../../engine/__tests__/golden';
 import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios';
 import { TankSession } from '../../engine/session';
 import { hashOf } from '../../engine/random';
@@ -14,10 +16,10 @@ import { deepFreeze, derivedTanks, fingerprintOf, parseUserData, userRun, verify
 
 const suite = runSuite();
 
-describe('엔진을 바꾸지 않았다(기존 스냅샷 보호)', () => {
-  it('main(b809973)과 같은 어린왕자 재생 해시가 나온다', () => {
-    // 이 값이 바뀌면 엔진 계산이 달라진 것이다. 그때는 ENGINE_VERSION을 올리고 이 값을 의도적으로 갱신해야 한다.
-    expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe('897f99bd:a2f000ff');
+describe('엔진 계산 고정(골든 해시)', () => {
+  it('현재 엔진 버전의 어린왕자 재생 해시가 나온다', () => {
+    // 이 값이 바뀌면 엔진 계산이 달라진 것이다. 그때는 ENGINE_VERSION을 올리고 golden.ts에 새 값을 추가한다.
+    expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe(GOLDEN_REPLAY[ENGINE_VERSION]);
   });
 
   it('검증실의 사례 C는 앱 데모와 같은 어항을 만든다(엔진을 흉내 내지 않고 그대로 씀)', () => {
@@ -171,7 +173,7 @@ describe('가설 판정', () => {
 
   it('사람 평가가 필요한 가설은 자동 측정만으로 통과 처리하지 않는다', () => {
     const human = hyps.filter((h) => h.needsHuman);
-    expect(human.map((h) => h.id)).toEqual(['H1', 'H2', 'H3', 'H8', 'H11']);
+    expect(human.map((h) => h.id)).toEqual(['H1', 'H2', 'H3', 'H8', 'H10', 'H11']);
     for (const h of human) expect(h.verdict).not.toBe('pass');
   });
 });

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { ENGINE_VERSION } from '../../engine/config';
+import { GOLDEN_REPLAY } from '../../engine/__tests__/golden';
 import manifest from '../../../public/assets/manifest.json';
 import type { ElementAsset } from '../../assets/manifest';
 import { TankSession } from '../../engine/session';
@@ -38,8 +40,8 @@ describe('화면 표시 규칙', () => {
     for (const [id, y] of a) expect(b.get(id), id).toBe(y);
   });
 
-  it('엔진 계산은 그대로다(골든 해시)', () => {
-    expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe('897f99bd:a2f000ff');
+  it('화면 규칙은 엔진 계산을 바꾸지 않는다(현재 엔진 골든 해시)', () => {
+    expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe(GOLDEN_REPLAY[ENGINE_VERSION]);
   });
 });
 

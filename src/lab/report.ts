@@ -1,11 +1,11 @@
-import { ENGINE_VERSION } from '../engine/config';
+import { ENGINE_VERSION, FISH_SPACE } from '../engine/config';
 import { distinctness, evaluateHypotheses, h7Detail, VERDICT_LABEL } from './hypotheses';
 import { fmt, LIFECYCLE_LABEL } from './metrics';
 import { checkDeterminism, frameAt, type SuiteResult } from './runner';
 import { LONG_CHECKPOINTS, LONG_DURATIONS } from './samples';
 import type { DayFrame, RunResult } from './types';
 import type { ElementAsset } from '../assets/manifest';
-import { OCCLUSION_TARGET, occlusionRows, pct } from './occlusion';
+import { FISH_BAND_TARGET, FISH_BASELINE_010, OCCLUSION_TARGET, occlusionRows, pct } from './occlusion';
 
 /**
  * 검증 결과를 마크다운으로. 브라우저(검증실 "보고서 복사")와 `npm run lab:report`가 같은 함수를 쓴다.
@@ -39,7 +39,7 @@ export function buildReport(s: SuiteResult, opts: { determinism?: boolean; asset
   const h7 = h7Detail(s);
   L.push('# 이루리움 생성 엔진 검증 보고서 (단계 A)');
   L.push('');
-  L.push(`- 엔진 버전: \`${ENGINE_VERSION}\` (이번 검증에서 엔진 수치·규칙은 바꾸지 않음)`);
+  L.push(`- 엔진 버전: \`${ENGINE_VERSION}\` (0.2.0: 이슈 #9 물고기 헤엄 공간 예산 추가. 그 밖의 수치·규칙은 0.1.0과 같음)`);
   L.push('- 근거: v0.3.1 수정 노트 6장(가설 H1~H11, 사례 A~F), v0.3.2 기술 보완서');
   L.push('- **데이터 출처: 이 보고서의 모든 수치는 검증용으로 만든 샘플(가상 관장) 기록에서 나왔어요. 실제 사용자 기록이 아니에요.** 실제 기록은 검증실 "실제 기록" 탭에서 읽기 전용으로만 봐요.');
   L.push(`- 샘플 시나리오 ${s.scenarios.length}개, 어항 ${Object.values(s.runs).flat().length}개`);
@@ -170,10 +170,22 @@ export function buildReport(s: SuiteResult, opts: { determinism?: boolean; asset
       L.push(`| ${r.label} | ${r.after.fish} | ${pct(r.before.frontCover)} → **${pct(r.after.effectiveCover)}** | ${Math.round(r.before.plantTop)} → **${Math.round(r.after.plantTop)}** | ${pct(r.before.fishOverlap)} → **${pct(r.after.fishOverlap)}** | ${pct(r.before.bandOverlap)} → **${pct(r.after.bandOverlap)}** |`);
     }
     L.push('');
-    L.push('꾸준형 200일(물고기 8마리)은 헤엄 공간보다 물고기 키 합이 커서 헤엄 띠 겹침이 60%대로 남아요. 물고기 수·크기 상한(엔진, H8)은 후속 실험 과제예요.');
+    L.push('');
+    L.push(`### 8-1. 물고기 밀도 (이슈 #9) — 엔진 0.1.0 → ${ENGINE_VERSION}`);
+    L.push('');
+    L.push(`엔진에 물고기 헤엄 공간 예산을 넣었어요. 물고기 몸 높이 × 크기 배율의 합이 헤엄 띠(${FISH_SPACE.bandHeight}) × ${FISH_SPACE.maxFill}를 넘지 않고, 완성 전에는 대표 생물(여우 물고기) 자리를 남겨 둬요. 넘으면 새 물고기 대신 수초·수석이 생기거나 다른 생물이 자라요. 기준 [검증용 가설]: 헤엄 띠 겹침 ${pct(FISH_BAND_TARGET)} 미만.`);
+    L.push('');
+    L.push('| 어항 | 물고기 수 (0.1.0 → 지금) | 헤엄 띠 겹침 (0.1.0 → 지금) |');
+    L.push('|---|---|---|');
+    for (const r of occlusionRows(s, opts.assets)) {
+      const b = FISH_BASELINE_010[r.label];
+      L.push(`| ${r.label} | ${b ? b.fish : '-'} → **${r.after.fish}** | ${b ? pct(b.band) : '-'} → **${pct(r.after.bandOverlap)}** |`);
+    }
+    L.push('');
+    L.push('대가: 오래 기록한 어항일수록 물고기가 적어요(꾸준형 200일 8 → 4마리). 배율 1.4는 예산 없음·1.0·1.2·1.4 비교 뒤 기획자가 정했어요. 남는 성장은 수초·수석과 기존 생물 성장으로 가요. 200일 어항이 허전해 보이는지는 사람 평가(H8·H11)로 확인해야 해요. 0.1.0 값은 main bb039c0에서 같은 표시 규칙으로 잰 고정 기록이에요.');
     L.push('');
   }
-  L.push('## 9. 후속 실험 과제 (이번 PR에서는 엔진 수치를 바꾸지 않음)');
+  L.push('## 9. 후속 실험 과제');
   L.push('');
   L.push('v0.3.1 6.3 절차대로 한 번에 하나만 바꾸고, 바꾸면 `ENGINE_VERSION`을 올린다. 그 전 스냅샷은 바꾸지 않는다.');
   L.push('');
@@ -184,11 +196,13 @@ export function buildReport(s: SuiteResult, opts: { determinism?: boolean; asset
   return L.join('\n');
 }
 
-/** 후속 실험 과제. 화면 "가설" 탭과 보고서가 함께 쓴다. 이번 PR에서는 엔진 수치를 바꾸지 않는다. */
+/** 후속 실험 과제. 화면 "가설" 탭과 보고서가 함께 쓴다. 엔진 수치는 한 번에 하나씩, ENGINE_VERSION을 올려 바꾼다. */
 export const FOLLOW_UP: Array<{ task: string; why: string; first: string }> = [
   { task: 'H5 장기 특별 변화', why: '꾸준형 200일에서 131~160일 특별 변화 0회', first: '마일스톤을 기계적으로 촘촘하게(예: 25회마다) 하면 보상이 반복처럼 느껴질 수 있어요. 기간·계절·감정 흐름 같은 다른 종류의 변화와 비교 실험부터' },
   { task: 'H9 반복 방지', why: '연속 성장에서 같은 종류 33%', first: '"같은 종류(물고기·수초…)가 이어짐"과 "같은 요소가 계속 자람"을 나눠 재는 기준을 먼저 확정. 그다음 기존 요소 키우기의 반복 감점·같은 요소 최대 개수(초깃값 2) 조정' },
   { task: 'H4 성장 횟수', why: '사례 C는 8회로 통과, 매일 기록하면 11회', first: '사례 C 하나로 전 사용자 적합성을 확정하지 않기. 기록 패턴별 기준(매일·주 5일·띄엄) 정하기' },
   { task: '시각적 감정 구별', why: '수치 기준만 통과', first: '실제 그래픽 적용 뒤 짝짓기 테스트(지인 5명 이상, 4/5)' },
+  { task: '200일 어항 물고기 수', why: '0.2.0 헤엄 공간 예산(1.4)으로 겹침은 줄었지만 꾸준형 200일 물고기 8 → 4마리', first: '허전해 보이는지 사람 평가. 차가운 감정 쪽 작은 물고기 그림 추가(송사리 상한만 늘리는 건 효과 없었음)' },
+  { task: 'H10 하루 1일치 무게', why: '예산이 빠듯하면(1.0·1.2) 시드 20쌍 기준 1번 vs 5번 차이가 시드 잡음보다 커져요. 채택한 1.4에서는 기준선 수준', first: '예산 배율을 다시 바꿀 때마다 재기. 5번 기록한 날 어항이 그림으로도 쏠려 보이는지 사람 확인' },
   { task: '사람·실기기 평가', why: 'H1·H2·H3·H8·H11 보류', first: '지인 14일 기록, 한마디 라벨링 100개, 저사양 폰 fps' },
 ];
