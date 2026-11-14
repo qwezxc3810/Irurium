@@ -148,6 +148,8 @@ function ScenarioTab({ suite, groups, id, setId, onOpen, matrix }: { suite: Suit
   const list = suite.scenarios.filter((s) => groups.includes(s.group));
   const sc = list.find((s) => s.id === id) ?? list[0]!;
   const runs = suite.runs[sc.id]!;
+  // H10처럼 시드 분포용 어항이 많은 실험은 시드 1 쌍만 보여 준다
+  const shown = runs.filter((r) => !r.tags.seed || r.tags.seed === '1');
   const [tankKey, setTankKey] = useState(runs[0]!.key);
   const tank = runs.find((r) => r.key === tankKey) ?? runs[0]!;
   const allDays = Array.from({ length: tank.frames.length }, (_, i) => i + 1);
@@ -166,12 +168,13 @@ function ScenarioTab({ suite, groups, id, setId, onOpen, matrix }: { suite: Suit
       </section>
       <section className="card">
         <h2>날짜별 어항 갤러리</h2>
-        <Gallery runs={runs} days={sc.checkpoints} onOpen={onOpen} />
+        {shown.length < runs.length && <p className="hint">분포 계산용 어항 {runs.length - shown.length}개는 갤러리·표에서 숨겼어요(시드 1 쌍만 표시). 수치는 가설 탭에 있어요.</p>}
+        <Gallery runs={shown} days={sc.checkpoints} onOpen={onOpen} />
       </section>
       <section className="card">
         <h2>마지막 날 수치 비교</h2>
-        <FinalTable runs={runs} />
-        {matrix && runs.length > 1 && (<><h3>어항끼리 차이</h3><DistanceMatrix runs={runs} /></>)}
+        <FinalTable runs={shown} />
+        {matrix && shown.length > 1 && (<><h3>어항끼리 차이</h3><DistanceMatrix runs={shown} /></>)}
       </section>
       <section className="card">
         <div className="row spread">
@@ -451,9 +454,9 @@ function UserTab({ onOpen }: { onOpen: (o: OpenFrame) => void }) {
           <section className="card">
             <h2>무결성(읽기 전용 확인)</h2>
             <ul className="checks">
-              <li className={integrity.problems.length ? 'bad' : 'ok'}>스냅샷 {integrity.checked}개를 저장된 입력으로 다시 계산해 해시만 비교: {integrity.problems.length ? integrity.problems.slice(0, 3).join(' / ') : '모두 일치'}</li>
+              <li className={integrity.problems.length ? 'bad' : 'ok'}>스냅샷 {integrity.checked}개 검사(내용 해시 I3 · 기준 체인 I4 · 같은 엔진 버전은 다시 계산 I2): {integrity.problems.length ? integrity.problems.slice(0, 3).join(' / ') : '모두 일치'}</li>
               {integrity.otherVersion > 0 && (
-                <li className="ok">엔진 {integrity.versions.join(', ')}로 만든 기록이에요. 지금 엔진({ENGINE_VERSION})과 다른 버전 스냅샷 {integrity.otherVersion}개는 저장된 결과를 그대로 보여 주고, 내용 해시만 확인했어요(다시 계산하지 않음).</li>
+                <li className="ok">엔진 {integrity.versions.join(', ')}로 만든 기록이에요. 지금 엔진({ENGINE_VERSION})과 다른 버전 스냅샷 {integrity.otherVersion}개는 저장된 결과를 그대로 보여 주고, 내용 해시(I3)와 기준 체인(I4)만 확인했어요. 다시 계산(I2)은 하지 않아서, 이 스냅샷들의 입력만 바뀐 경우는 잡지 못해요.</li>
               )}
               <li className="ok">원본 지문 <code>{integrity.fingerprint}</code> · 기록 {run.entryCount}개 · 어항 {data.cfg.tankId} · 저장된 상태 {LIFECYCLE_LABEL[data.lifecycle]}</li>
               {check && <li className={check.before === check.after ? 'ok' : 'bad'}>가상 실험 전후 원본 지문: {check.before} → {check.after} {check.before === check.after ? '(그대로)' : '(바뀜!)'}</li>}

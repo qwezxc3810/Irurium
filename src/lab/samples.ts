@@ -346,6 +346,8 @@ function expH3(): SampleScenario {
 }
 
 export const H10_LONELY_DAYS = [3, 6, 9, 12];
+/** H10 시드 수. 시드 1은 갤러리에 보이는 대표 쌍(H10a·H10b), 나머지는 분포용 */
+export const H10_SEEDS = 20;
 
 function expH10(): SampleScenario {
   const one = DAYS_14.map((day) => ({ day, records: [{ chips: H10_LONELY_DAYS.includes(day) ? ['쓸쓸함'] : ['따뜻함'] }] }));
@@ -353,19 +355,20 @@ function expH10(): SampleScenario {
     day,
     records: H10_LONELY_DAYS.includes(day) ? Array.from({ length: 5 }, () => ({ chips: ['쓸쓸함'] })) : [{ chips: ['따뜻함'] }],
   }));
-  const seedTanks: SampleTank[] = range(2, 5).map((i) => {
-    const key = `H10S${i}`;
-    return { key, label: `기준선: 1번 · 시드 ${i}`, cfg: bookCfg(key, `sample:h10:${i}`), entries: bookEntries(key, one, BOOK_DAILY), days: 14, finishOnLastPage: true, tags: { role: 'baseline' } };
-  });
+  // 시드마다 1번 기록·5번 기록 쌍을 만든다. "1번 vs 5번 차이" 분포를 "시드만 다를 때 차이" 분포와 비교한다.
+  const pairTanks: SampleTank[] = range(2, H10_SEEDS).flatMap((i) => [
+    { key: `H10a${i}`, label: `1번 · 시드 ${i}`, cfg: bookCfg(`H10a${i}`, `sample:h10:${i}`), entries: bookEntries(`H10a${i}`, one, BOOK_DAILY), days: 14, finishOnLastPage: true, tags: { role: 'one', seed: String(i) } },
+    { key: `H10b${i}`, label: `5번 · 시드 ${i}`, cfg: bookCfg(`H10b${i}`, `sample:h10:${i}`), entries: bookEntries(`H10b${i}`, five, BOOK_DAILY), days: 14, finishOnLastPage: true, tags: { role: 'five', seed: String(i) } },
+  ]);
   return {
     id: 'exp-h10', group: 'experiment', origin: 'sample', title: 'H10 하루 1일치 무게 실험',
-    summary: '14일 중 4일(3·6·9·12일차) 쓸쓸함. 한 관장은 그날 1번, 다른 관장은 그날 5번 기록(쪽수 합은 같음). 시드 같음.',
-    watch: '5번 기록한 날이 어항의 성장 방향을 독차지하지 않는지. 두 어항 차이가 "시드만 바꿨을 때"보다 작아야 해요.',
+    summary: `14일 중 4일(3·6·9·12일차) 쓸쓸함. 한 관장은 그날 1번, 다른 관장은 그날 5번 기록(쪽수 합은 같음). 시드 ${H10_SEEDS}개마다 한 쌍씩.`,
+    watch: '5번 기록한 날이 어항의 성장 방향을 독차지하지 않는지. "1번 vs 5번" 차이가 "시드만 바꿨을 때" 차이보다 크지 않아야 해요. 갤러리에는 시드 1 쌍만 보여요.',
     hypotheses: ['H10'],
     tanks: [
-      { key: 'H10a', label: '쓸쓸한 날 1번 기록', cfg: bookCfg('H10a', 'sample:h10:1'), entries: bookEntries('H10a', one, BOOK_DAILY), days: 14, finishOnLastPage: true, tags: { role: 'one' } },
-      { key: 'H10b', label: '쓸쓸한 날 5번 기록', cfg: bookCfg('H10b', 'sample:h10:1'), entries: bookEntries('H10b', five, BOOK_DAILY), days: 14, finishOnLastPage: true, tags: { role: 'five' } },
-      ...seedTanks,
+      { key: 'H10a', label: '쓸쓸한 날 1번 기록', cfg: bookCfg('H10a', 'sample:h10:1'), entries: bookEntries('H10a', one, BOOK_DAILY), days: 14, finishOnLastPage: true, tags: { role: 'one', seed: '1' } },
+      { key: 'H10b', label: '쓸쓸한 날 5번 기록', cfg: bookCfg('H10b', 'sample:h10:1'), entries: bookEntries('H10b', five, BOOK_DAILY), days: 14, finishOnLastPage: true, tags: { role: 'five', seed: '1' } },
+      ...pairTanks,
     ],
     checkpoints: [1, 3, 6, 9, 12, 14],
   };

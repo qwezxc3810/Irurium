@@ -88,6 +88,8 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
       { id: 'joy', name: '유쾌함 14일(사례 B)', state: last('case-B', 'B3') },
       { id: 'lonely', name: '쓸쓸함으로 바뀐 어항(H3 실험)', state: last('exp-h3', 'H3') },
       { id: 'long', name: '꾸준형 200일', state: last('long-steady', 'LS') },
+      { id: 'sparse', name: '띄엄형 200일', state: last('long-sparse', 'LP') },
+      { id: 'D', name: '영어 공부 150일(사례 D)', state: last('case-D', 'D') },
     ];
   }, [suite]);
   const [sceneId, setSceneId] = useState('all');

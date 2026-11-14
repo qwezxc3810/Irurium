@@ -340,41 +340,78 @@ function h9(s: SuiteResult): HypothesisResult {
 }
 
 // H10 하루 1일치 무게
-export interface H10Detail { comp: number; light: number; baseline: number; trailDiff: number }
+export interface H10Detail {
+  /** 시드 1 대표 쌍의 구성 차이 */
+  comp: number;
+  light: number;
+  /** 시드별 1번 vs 5번 구성 차이 */
+  pairs: number[];
+  /** 1번 기록 어항끼리, 시드만 다를 때 구성 차이 */
+  seedOnly: number[];
+  /** 두 분포의 중앙값 */
+  pairMedian: number;
+  baseline: number;
+  /** 1번 vs 5번 차이가 시드만 다를 때 중앙값보다 큰 시드 비율 */
+  aboveShare: number;
+  seeds: number;
+  trailDiff: number;
+}
+
+const quantile = (xs: number[], q: number) => {
+  const a = [...xs].sort((x, y) => x - y);
+  if (!a.length) return 0;
+  const i = (a.length - 1) * q;
+  const lo = Math.floor(i);
+  return a[lo]! + (a[Math.min(lo + 1, a.length - 1)]! - a[lo]!) * (i - lo);
+};
+export const fmtSpread = (xs: number[]) => `${fmt(quantile(xs, 0.25), 2)} / ${fmt(quantile(xs, 0.5), 2)} / ${fmt(quantile(xs, 0.75), 2)}`;
 
 export function h10Detail(s: SuiteResult): H10Detail {
   const rs = runs(s, 'exp-h10');
-  const one = rs.find((r) => r.tags.role === 'one')!;
-  const five = rs.find((r) => r.tags.role === 'five')!;
-  const baseStates = [one, ...rs.filter((r) => r.tags.role === 'baseline')].map(finalState);
-  const base = pairwise(baseStates, compositionDistance).sort((a, b) => a - b);
+  const bySeed = new Map<string, { one?: RunResult; five?: RunResult }>();
+  for (const r of rs) {
+    const k = r.tags.seed ?? '1';
+    const e = bySeed.get(k) ?? {};
+    if (r.tags.role === 'one') e.one = r;
+    if (r.tags.role === 'five') e.five = r;
+    bySeed.set(k, e);
+  }
+  const full = [...bySeed.values()].filter((e): e is { one: RunResult; five: RunResult } => !!e.one && !!e.five);
+  const pairs = full.map((e) => compositionDistance(finalState(e.one), finalState(e.five)));
+  const seedOnly = pairwise(full.map((e) => finalState(e.one)), compositionDistance);
+  const baseline = quantile(seedOnly, 0.5);
+  const rep = bySeed.get('1')!;
+  const trail = Math.max(...full.map((e) => Math.hypot(e.one.trailAvg.temp - e.five.trailAvg.temp, e.one.trailAvg.energy - e.five.trailAvg.energy)));
   return {
-    comp: compositionDistance(finalState(one), finalState(five)),
-    light: lightDistance(finalState(one), finalState(five)),
-    baseline: base[Math.floor(base.length / 2)] ?? 0,
-    trailDiff: Math.hypot(one.trailAvg.temp - five.trailAvg.temp, one.trailAvg.energy - five.trailAvg.energy),
+    comp: compositionDistance(finalState(rep.one!), finalState(rep.five!)),
+    light: lightDistance(finalState(rep.one!), finalState(rep.five!)),
+    pairs, seedOnly, pairMedian: quantile(pairs, 0.5), baseline,
+    aboveShare: pairs.filter((p) => p > baseline).length / Math.max(1, pairs.length),
+    seeds: full.length,
+    trailDiff: trail,
   };
 }
 
 function h10(s: SuiteResult): HypothesisResult {
   const d = h10Detail(s);
   const trailOk = d.trailDiff < 0.01;
-  const compOk = d.comp <= d.baseline;
+  const compOk = d.pairMedian <= d.baseline;
   const auto: Verdict = trailOk && compOk ? 'pass' : 'adjust';
   return {
     id: 'H10', title: '하루 1일치 무게', initial: '같은 날 기록들의 감정은 감정 이력에서 하루 1일치로 합침',
     question: '여러 번 기록한 날이 과대 반영되지 않는지', criterion: '같은 감정을 1번/5번 기록한 두 어항의 성장 방향 차이가 작음',
     measures: [
-      { label: '감정 이력 평균 차이(1번 vs 5번)', value: fmt(d.trailDiff, 3), ok: trailOk },
-      { label: '구성 차이(1번 vs 5번)', value: fmt(d.comp, 3), ok: compOk },
-      { label: '기준선: 같은 기록·시드만 다를 때 구성 차이(중앙값)', value: fmt(d.baseline, 3), ok: null },
-      { label: '[참고] 물빛 차이', value: `${fmt(d.light, 3)} (5번 기록한 날은 하루 상한 30%까지 움직여서 생기는 차이, H3 규칙)`, ok: null },
+      { label: `감정 이력 평균 차이(1번 vs 5번, 시드 ${d.seeds}개 중 최대)`, value: fmt(d.trailDiff, 3), ok: trailOk },
+      { label: `구성 차이 1번 vs 5번 (시드 ${d.seeds}쌍, 하위 25% / 중앙값 / 상위 25%)`, value: fmtSpread(d.pairs), ok: compOk },
+      { label: `기준선: 1번 기록 어항끼리 시드만 다를 때 (${d.seedOnly.length}쌍)`, value: fmtSpread(d.seedOnly), ok: null },
+      { label: '1번 vs 5번 차이가 기준선 중앙값보다 큰 시드', value: `${Math.round(d.aboveShare * 100)}%`, ok: null },
+      { label: '[참고] 물빛 차이(시드 1)', value: `${fmt(d.light, 3)} (5번 기록한 날은 하루 상한 30%까지 움직여서 생기는 차이, H3 규칙)`, ok: null },
     ],
-    needsHuman: false, humanPart: null,
-    autoVerdict: auto, verdict: auto,
+    needsHuman: true, humanPart: '수치는 엔진 상태 기준이에요. 5번 기록한 날의 어항이 그림으로 봐도 "그날에 쏠려" 보이지 않는지 사람이 갤러리로 확인',
+    autoVerdict: auto, verdict: humanVerdict(auto),
     reason: auto === 'pass'
-      ? `감정 이력은 1번/5번이 같은 무게로 합쳐졌고, 구성 차이(${fmt(d.comp, 3)})도 시드만 바꿨을 때(${fmt(d.baseline, 3)}) 이하예요. 물빛만 조금 더 푸르러졌는데 이건 하루 조명 상한 규칙 범위 안이에요.`
-      : `구성 차이(${fmt(d.comp, 3)})가 시드만 바꿨을 때(${fmt(d.baseline, 3)})보다 커요. 기록 순번이 바뀌며 무작위 값이 달라진 영향인지 확인이 필요해요.`,
+      ? `감정 이력은 1번/5번이 같은 무게로 합쳐졌고, 시드 ${d.seeds}쌍의 1번 vs 5번 구성 차이(중앙값 ${fmt(d.pairMedian, 2)})가 시드만 바꿨을 때(중앙값 ${fmt(d.baseline, 2)}) 이하예요. 자동 기준은 통과지만, 그림으로 쏠려 보이지 않는지는 사람 확인 전이라 보류로 둬요.`
+      : `시드 ${d.seeds}쌍의 1번 vs 5번 구성 차이(중앙값 ${fmt(d.pairMedian, 2)})가 시드만 바꿨을 때(중앙값 ${fmt(d.baseline, 2)})보다 커요. 기록 순번이 늘며 무작위 값이 달라진 영향과 실제 쏠림을 구분해야 해요.`,
     scenarios: ['exp-h10', 'case-F'],
   };
 }

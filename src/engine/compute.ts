@@ -112,11 +112,17 @@ export function computeFinale(base: { state: TankState; ledger: Ledger }, cfg: T
     const obj = placeNew(state, ledger, finale, rng, seq, state.light.temp);
     if (obj) changes.push({ level: 'finale', text: `${subj(finale.name)} 이 어항의 대표 생물이 되었어요`, objectId: obj.id });
   } else {
-    const biggest = [...state.objects].filter((o) => o.kind === 'fish').sort((a, b) => b.scale - a.scale)[0];
-    if (biggest) {
-      const grow = Math.min(GROWTH.maxScale, biggest.scale + 0.2) - biggest.scale;
-      if (fishFits(state, cfg.themeId, (elementOf(cfg.themeId, biggest.el)?.bodyHeight ?? 0) * grow, false)) biggest.scale = round(biggest.scale + grow);
-      changes.push({ level: 'finale', text: '가장 오래 함께한 물고기가 대표 생물이 되었어요', objectId: biggest.id });
+    // 대표 생물이 들어갈 수 없으면(물고기 상한·헤엄 공간) 가장 먼저 태어난 물고기가 대표가 된다. 공간이 있을 때만 조금 자란다.
+    const oldest = [...state.objects].filter((o) => o.kind === 'fish').sort((a, b) => a.bornSeq - b.bornSeq || a.id.localeCompare(b.id))[0];
+    if (oldest) {
+      const grow = Math.min(GROWTH.maxScale, oldest.scale + 0.2) - oldest.scale;
+      const grew = grow > 0 && fishFits(state, cfg.themeId, (elementOf(cfg.themeId, oldest.el)?.bodyHeight ?? 0) * grow, false);
+      if (grew) oldest.scale = round(oldest.scale + grow);
+      changes.push({
+        level: 'finale',
+        text: grew ? '가장 오래 함께한 물고기가 대표 생물이 되어 조금 더 자랐어요' : '가장 오래 함께한 물고기가 대표 생물이 되었어요',
+        objectId: oldest.id,
+      });
     }
   }
   state.light = { temp: round(clamp(state.light.temp + 0.1)), energy: state.light.energy };

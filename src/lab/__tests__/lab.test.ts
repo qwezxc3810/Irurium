@@ -173,7 +173,7 @@ describe('가설 판정', () => {
 
   it('사람 평가가 필요한 가설은 자동 측정만으로 통과 처리하지 않는다', () => {
     const human = hyps.filter((h) => h.needsHuman);
-    expect(human.map((h) => h.id)).toEqual(['H1', 'H2', 'H3', 'H8', 'H11']);
+    expect(human.map((h) => h.id)).toEqual(['H1', 'H2', 'H3', 'H8', 'H10', 'H11']);
     for (const h of human) expect(h.verdict).not.toBe('pass');
   });
 });
