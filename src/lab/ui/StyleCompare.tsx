@@ -95,6 +95,7 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
   const [width, setWidth] = useState(180);
   const [amp, setAmp] = useState(0.08);
   const [applied, setApplied] = useState({ width: 180, amp: 0.08 });
+  const [mode, setMode] = useState<'graphics' | 'lighting'>('lighting');
 
   const scene = scenes.find((s) => s.id === sceneId) ?? scenes[0]!;
   const state = useMemo<TankState>(() => {
@@ -111,6 +112,10 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
         <p>같은 어항 상태를 세 가지 금붕어 그림으로 나란히 움직여 봐요. 엔진 결과는 셋 다 똑같고 <b>그림만</b> 달라요. 2026-11-13 기획자 결정으로 <b>세미 리얼</b>을 앱(manifest.json)에 적용했어요. 세미 리얼 칸은 앱과 같은 설정(크기 180, 휘는 정도 0.08)이에요.</p>
         <p className="hint">물고기·수초·수석·상징·배경·바닥이 모두 세미 리얼이에요. "이전(임시 SVG)" 칸은 물고기·수초·수석·상징을 예전 그림으로 보여 줘요(배경·바닥은 테마 단위라 세 칸 모두 새 배경). "실사" 칸은 금붕어만 실사로 바꿔 보여 줘요.</p>
       </section>
+      <div className="scenario-picker">
+        <button className={mode === 'lighting' ? 'chip on' : 'chip'} onClick={() => setMode('lighting')}>조명 비교(이전 덧칠 vs 지금 색 보정)</button>
+        <button className={mode === 'graphics' ? 'chip on' : 'chip'} onClick={() => setMode('graphics')}>그래픽 비교(임시 SVG·실사·세미 리얼)</button>
+      </div>
       <section className="card">
         <div className="field">장면
           <div className="chips">{scenes.map((s) => <button key={s.id} className={s.id === sceneId ? 'chip on' : 'chip'} onClick={() => setSceneId(s.id)}>{s.name}</button>)}</div>
@@ -129,7 +134,17 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
         </div>
         <p className="hint">이 장면의 금붕어 {goldfish}마리. 크기·휘는 정도는 실사 칸에만 적용돼요(적용하면 그림을 다시 불러와요). 세미 리얼 칸은 앱 설정 그대로예요.</p>
       </section>
-      <div className="style-grid">
+      {mode === 'lighting' && (
+        <div className="style-grid two">
+          {[{ id: 'legacy', name: '이전: 덧칠', note: '호박색/하늘색 반투명 막 + SVG 빛줄기·별', legacy: true }, { id: 'graded', name: '지금: 색 보정', note: '색온도·채도·밝기 + 가산 빛, 코드로 그린 빛줄기·별', legacy: false }].map((v) => (
+            <section key={v.id} className="card style-card">
+              <div className="row spread"><h2 style={{ margin: 0 }}>{v.name}</h2><span className="hint" style={{ margin: 0 }}>{v.note}</span></div>
+              <AquariumCanvas key={v.id} state={state} options={options} legacyLighting={v.legacy} label={`${v.name} 조명`} />
+            </section>
+          ))}
+        </div>
+      )}
+      {mode === 'graphics' && <div className="style-grid">
         {VARIANTS.map((v) => {
           // 세미 리얼은 manifest.json 값 그대로(앱과 같은 모습). 나머지는 덮어쓰기로 비교한다.
           const overrides: AssetOverrides | undefined =
@@ -143,7 +158,7 @@ export function StyleCompare({ suite }: { suite: SuiteResult }) {
             </section>
           );
         })}
-      </div>
+      </div>}
     </div>
   );
 }

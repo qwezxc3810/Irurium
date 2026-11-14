@@ -2,6 +2,7 @@ import { CAPS } from '../engine/config';
 import { CHIP_VECTORS, BASE_CHIPS } from '../engine/mood';
 import type { Lifecycle, TankState } from '../engine/types';
 import type { FrameMetrics } from './types';
+import { gradedWater, hex } from '../render/lighting';
 
 /**
  * 검증용 지표. 엔진 규칙이 아니라 "보는 사람이 비교하기 쉽게" 만든 측정값이다.
@@ -27,17 +28,15 @@ export function stageOf(fillPct: number): { stage: number; name: string } {
   return { stage: s.stage, name: s.name };
 }
 
-/** 배경 물색(테마 세미 리얼 배경의 가운데 평균색 #043877)에 렌더러의 감정 조명을 겹친 색. AquariumRenderer.drawLight와 같은 공식. */
-const WATER = [0x04, 0x38, 0x77] as const;
-const WARM = [0xf5, 0x9e, 0x0b] as const;
-const COOL = [0x38, 0xbd, 0xf8] as const;
+/**
+ * 화면 평균 물빛(근사 지표): 세미 리얼 배경의 가운데 평균색 #043877에 렌더러와 같은 감정 조명 색 보정 규칙(src/render/lighting.ts)을 적용한 색.
+ * 가산 빛 기여는 화면 평균 35%로 가정한 값이라 실제 프레임 픽셀 평균과는 다를 수 있다.
+ * (이전 방식은 호박색/하늘색 덧칠이었고 legacyWater로 비교할 수 있다)
+ */
+export const WATER = [0x04, 0x38, 0x77] as const;
 
-export function waterColor(light: { temp: number }): string {
-  const t = light.temp;
-  const a = Math.abs(t) < 0.01 ? 0 : Math.min(0.28, Math.abs(t) * 0.3);
-  const over = t > 0 ? WARM : COOL;
-  const rgb = WATER.map((w, i) => Math.round(w * (1 - a) + over[i]! * a));
-  return '#' + rgb.map((v) => v.toString(16).padStart(2, '0')).join('');
+export function waterColor(light: { temp: number; energy?: number }): string {
+  return hex(gradedWater(WATER, { temp: light.temp, energy: light.energy ?? 0 }));
 }
 
 /** 조명 방향이 가장 가까운 기본 마음 칩. 움직임이 작으면 '중립'. */

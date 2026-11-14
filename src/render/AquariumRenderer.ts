@@ -1,6 +1,15 @@
 // 엄격한 보안 정책(CSP)에서 eval 없이 셰이더 코드를 만들도록 PixiJS 대체 구현을 켠다(호스팅 환경 호환).
 import 'pixi.js/unsafe-eval';
-import { Application, Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { Application, ColorMatrixFilter, Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { lightGrade } from './lighting';
+import { glowTexture, makeLightRays, makeStar, type FxView } from './proceduralFx';
+
+/** 코드로 그리는 효과 목록(명시적 등록). 새 효과는 여기에 추가한다 */
+const PROCEDURAL_FX: Record<string, () => FxView> = {
+  'fx.lightray': makeLightRays,
+  'fx.stars-bright': makeStar,
+};
+const warnedFx = new Set<string>();
 import { WORLD } from '../engine/config';
 import { mulberry32, seedFromString } from '../engine/random';
 import type { PlacedObject, TankState } from '../engine/types';
@@ -36,6 +45,8 @@ interface Bubble { s: Sprite; vy: number; wobble: number; phase: number }
 export class AquariumRenderer {
   private app = new Application();
   private world = new Container();
+  /** 감정 조명 색 보정을 받는 장면(배경~빛). 유리·이끼(glass)는 밖에 두어 감정에 따라 이끼 색이 바뀌지 않게 한다 */
+  private scene = new Container();
   private layers = {
     background: new Container(),
     back: new Container(),
@@ -55,7 +66,11 @@ export class AquariumRenderer {
   private mossGraphics = new Graphics();
   private mossMask = new Graphics();
   private wipe: { t: number; bar: Graphics } | null = null;
-  private fxSprites = new Map<string, Sprite>();
+  private fxViews = new Map<string, FxView>();
+  /** 감정 조명 색 보정(덧칠 대신). legacyLighting이면 쓰지 않는다 */
+  private grade = new ColorMatrixFilter();
+  private glow: Sprite | null = null;
+  private legacyLighting = false;
   private state: TankState | null = null;
   private opts: RenderOptions = { mossStage: 0, reducedMotion: false };
   private time = 0;
@@ -71,8 +86,9 @@ export class AquariumRenderer {
    * PixiJS를 시작하고 매니페스트의 그림을 불러온다. 불러오지 못한 파일 목록을 돌려준다.
    * still을 주면 화면에 붙이지 않고 고정 크기로 만들어, renderStill()로 정지 그림만 뽑는다(검증실 갤러리).
    */
-  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number }; overrides?: AssetOverrides } = {}): Promise<string[]> {
+  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number }; overrides?: AssetOverrides; legacyLighting?: boolean } = {}): Promise<string[]> {
     this.still = !!opts.still;
+    this.legacyLighting = !!opts.legacyLighting;
     if (opts.still) {
       await this.app.init({
         width: opts.still.width,
@@ -97,7 +113,8 @@ export class AquariumRenderer {
     if (this.destroyed) { this.app.destroy(true); return []; }
     if (host && !this.still) host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.world);
-    for (const layer of Object.values(this.layers)) this.world.addChild(layer);
+    this.world.addChild(this.scene);
+    for (const [name, layer] of Object.entries(this.layers)) (name === 'glass' ? this.world : this.scene).addChild(layer);
 
     // 수조 영역 밖으로 그려지지 않게 자른다
     const clip = new Graphics().roundRect(0, 0, WORLD.width, WORLD.height, 18).fill({ color: 0xffffff });
@@ -105,6 +122,18 @@ export class AquariumRenderer {
     this.world.mask = clip;
 
     this.layers.light.addChild(this.lightOverlay);
+    if (!this.legacyLighting) {
+      // 왼쪽 위(배경의 수면 빛 방향)에서 퍼지는 가산 빛. 색은 감정 온도에 따라 tint
+      this.glow = new Sprite(glowTexture());
+      this.glow.anchor.set(0.5);
+      this.glow.position.set(170, -40);
+      this.glow.width = 1300;
+      this.glow.height = 1000;
+      this.glow.blendMode = 'add';
+      this.glow.alpha = 0;
+      this.layers.light.addChild(this.glow);
+      this.scene.filters = [this.grade];
+    }
     this.moss.addChild(this.mossGraphics);
     this.moss.mask = this.mossMask;
     this.layers.glass.addChild(this.moss, this.mossMask);
@@ -169,7 +198,7 @@ export class AquariumRenderer {
       v.fade = this.frontFadeTarget(v, fishBoxes);
       v.sprite.alpha = v.fade;
     }
-    for (const sp of this.fxSprites.values()) sp.alpha = 0.8;
+    for (const fx of this.fxViews.values()) fx.still();
     this.app.renderer.render(this.app.stage);
     return this.app.canvas.toDataURL(type, 0.86);
   }
@@ -260,29 +289,50 @@ export class AquariumRenderer {
   private drawLight(state: TankState) {
     const t = state.light.temp;
     this.lightOverlay.clear();
-    if (Math.abs(t) < 0.01) return;
-    this.lightOverlay.rect(0, 0, WORLD.width, WORLD.height).fill({ color: t > 0 ? 0xf59e0b : 0x38bdf8, alpha: Math.min(0.28, Math.abs(t) * 0.3) });
+    if (this.legacyLighting) {
+      // 이전 방식(비교용): 수조 전체에 반투명 덧칠
+      if (Math.abs(t) < 0.01) return;
+      this.lightOverlay.rect(0, 0, WORLD.width, WORLD.height).fill({ color: t > 0 ? 0xf59e0b : 0x38bdf8, alpha: Math.min(0.28, Math.abs(t) * 0.3) });
+      return;
+    }
+    const g = lightGrade(state.light);
+    this.grade.matrix = g.matrix as unknown as ColorMatrixFilter['matrix'];
+    if (this.glow) {
+      this.glow.tint = g.glow.color;
+      this.glow.alpha = g.glow.alpha;
+    }
   }
 
+  /** 빛줄기·밝은 별은 코드로 그린다(배경 빛줄기와 방향을 맞추고, 그림 파일 없이 가산 빛으로). 이전 방식이면 SVG 그림 */
   private syncEffects(effects: string[]) {
-    for (const [id, s] of this.fxSprites) if (!effects.includes(id)) { s.destroy(); this.fxSprites.delete(id); }
+    for (const [id, fx] of this.fxViews) if (!effects.includes(id)) { fx.root.destroy({ children: true }); this.fxViews.delete(id); }
     for (const id of effects) {
-      if (this.fxSprites.has(id)) continue;
-      const tex = this.tex(id);
-      if (!tex) continue;
-      const s = new Sprite(tex);
-      if (id === 'fx.lightray') {
-        s.anchor.set(0.5, 0);
-        s.position.set(380, 0);
-        s.width = 360;
-        s.height = WORLD.height;
+      if (this.fxViews.has(id)) continue;
+      let fx: FxView | null = null;
+      if (!this.legacyLighting) {
+        const make = PROCEDURAL_FX[id];
+        if (!make) {
+          // 모르는 효과는 엉뚱한 그림(별 등)으로 그리지 않고 건너뛴다
+          if (!warnedFx.has(id)) { warnedFx.add(id); console.warn(`[irurium] 지원하지 않는 효과라 그리지 않아요: ${id}`); }
+          continue;
+        }
+        fx = make();
       } else {
-        s.anchor.set(0.5);
-        s.position.set(840, 80);
-        s.width = s.height = 64;
+        const tex = this.tex(id);
+        if (!tex) continue;
+        const s = new Sprite(tex);
+        const root = new Container();
+        root.addChild(s);
+        if (id === 'fx.lightray') { s.anchor.set(0.5, 0); s.position.set(380, 0); s.width = 360; s.height = WORLD.height; }
+        else { s.anchor.set(0.5); s.position.set(840, 80); s.width = s.height = 64; }
+        fx = {
+          root,
+          tick: (time, rm) => { s.alpha = rm ? 0.8 : id === 'fx.lightray' ? 0.55 + 0.25 * Math.sin(time * 0.6) : 0.7 + 0.3 * Math.sin(time * 1.8); },
+          still: () => { s.alpha = 0.8; },
+        };
       }
-      this.layers.fx.addChild(s);
-      this.fxSprites.set(id, s);
+      this.layers.fx.addChild(fx.root);
+      this.fxViews.set(id, fx);
     }
   }
 
@@ -322,9 +372,7 @@ export class AquariumRenderer {
       const sway = this.assets.manifest.elements[v.obj.el]?.sway;
       v.sprite.skew.x = sway && !rm ? sway.amplitude * Math.sin(this.time * sway.frequency * Math.PI * 2 + v.swayPhase) : 0;
     }
-    for (const [id, s] of this.fxSprites) {
-      s.alpha = rm ? 0.8 : id === 'fx.lightray' ? 0.55 + 0.25 * Math.sin(this.time * 0.6) : 0.7 + 0.3 * Math.sin(this.time * 1.8);
-    }
+    for (const fx of this.fxViews.values()) fx.tick(this.time, rm);
     if (!rm) this.tickBubbles(dt);
     if (this.wipe) this.tickWipe(dt);
   }

@@ -124,3 +124,4 @@ table.matrix td { text-align: center; }
 
 .style-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
 .style-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.style-grid.two { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
