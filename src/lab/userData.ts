@@ -1,4 +1,5 @@
 import { computeFinale, computeSnapshot } from '../engine/compute';
+import { ENGINE_VERSION } from '../engine/config';
 import { addDays, daysBetween } from '../engine/dates';
 import { computeMoss } from '../engine/moss';
 import { hashOf } from '../engine/random';
@@ -61,6 +62,9 @@ const contentHashOf = (s: Pick<Snapshot, 'state' | 'ledger' | 'changes'>) => has
 export interface IntegrityReport {
   checked: number;
   problems: string[];
+  /** 다른 엔진 버전으로 만든 스냅샷 수. 지금 엔진으로 다시 계산하면 달라지는 게 정상이라 I2(재계산)는 건너뛰고 I3(내용 해시)만 본다 */
+  otherVersion: number;
+  versions: string[];
   fingerprint: string;
 }
 
@@ -68,16 +72,20 @@ export interface IntegrityReport {
 export function verifyUserData(d: Readonly<SessionData>): IntegrityReport {
   const byId = new Map(d.snapshots.map((s) => [s.id, s]));
   const problems: string[] = [];
+  let otherVersion = 0;
   for (const s of d.snapshots) {
     if (contentHashOf(s) !== s.contentHash) problems.push(`${s.id}: 저장된 내용이 만든 뒤 바뀜(I3)`);
     if (!s.baseId) continue;
+    // 그 전 엔진으로 만든 스냅샷은 저장된 결과가 정답이다. 지금 엔진으로 다시 계산해 비교하지 않는다.
+    if (s.engineVersion !== ENGINE_VERSION) { otherVersion++; continue; }
     const base = byId.get(s.baseId);
     if (!base) { problems.push(`${s.id}: 기준 스냅샷 없음`); continue; }
     const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq) : s.input ? computeSnapshot(base, s.input, s.cfg) : null;
     if (!again) problems.push(`${s.id}: 계산 입력 없음`);
     else if (contentHashOf(again) !== s.contentHash) problems.push(`${s.id}: 다시 계산하면 결과가 다름(I2)`);
   }
-  return { checked: d.snapshots.length, problems, fingerprint: fingerprintOf(d) };
+  const versions = [...new Set(d.snapshots.map((s) => s.engineVersion))].sort();
+  return { checked: d.snapshots.length, problems, otherVersion, versions, fingerprint: fingerprintOf(d) };
 }
 
 export function fingerprintOf(d: Readonly<SessionData>): string {

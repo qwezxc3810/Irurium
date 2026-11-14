@@ -333,7 +333,7 @@ function h9(s: SuiteResult): HypothesisResult {
     autoVerdict: auto, verdict: auto,
     reason: `${ratioOk ? `연속 같은 종류 비율은 ${Math.round(ratio * 100)}%로 기준 안이에요. ` : `연속 같은 종류 비율이 ${Math.round(ratio * 100)}%로 기준을 넘어요. 새로 놓는 요소에는 ×0.7 감점이 있지만(${Math.round((newPairs ? newSame / newPairs : 0) * 100)}%), 어항이 찬 뒤 "기존 요소 키우기"는 감정에 가장 잘 맞는 요소를 고르기만 해서 같은 종류가 이어져요. `}`
       + (catalogOver.length
-        ? `또 현재 카탈로그는 같은 요소를 최대 ${Math.max(...theme.elements.map((e) => e.maxPerTank))}개까지 허용해서 H9 초깃값(2개)과 달라요. 별빛 사막 테마의 물고기가 3종뿐이라 2개로 막으면 물고기가 6마리에서 멈추기 때문이에요. 그래픽 작업에서 요소 종류를 늘리면서 맞추는 것을 제안해요(엔진 수치는 이번 PR에서 바꾸지 않음).`
+        ? `또 현재 카탈로그는 같은 요소를 최대 ${Math.max(...theme.elements.map((e) => e.maxPerTank))}개까지 허용해서 H9 초깃값(2개)과 달라요. 별빛 사막 테마의 물고기가 3종뿐이라 2개로 막으면 물고기가 6마리에서 멈추기 때문이에요. 그래픽 작업에서 요소 종류를 늘리면서 맞추는 것을 제안해요(H9 수치는 아직 바꾸지 않음).`
         : ''),
     scenarios: ['case-D', 'long-steady'],
   };

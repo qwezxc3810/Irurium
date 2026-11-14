@@ -13,6 +13,8 @@ export interface ElementDef {
   mood: { temp: number; energy: number };
   /** 한 어항에 같은 요소 최대 개수 */
   maxPerTank: number;
+  /** 물고기만: 크기 배율 1일 때 몸 높이(논리 좌표). 헤엄 공간 예산(FISH_SPACE)에 쓴다. 그림 비율과 대략 맞춘다 */
+  bodyHeight?: number;
   /** 처음 놓일 때 크기 배율 */
   baseScale: number;
   /** true면 성장으로는 나오지 않고 특별 변화·완성에서만 */
@@ -33,10 +35,10 @@ export const STARLIT_DESERT: ThemeDef = {
   name: '별빛 사막',
   finaleElement: 'fish.foxfish',
   elements: [
-    { id: 'fish.medaka', name: '모래빛 송사리', kind: 'fish', layers: ['mid'], mood: { temp: 0.3, energy: 0.5 }, maxPerTank: 5, baseScale: 1 },
-    { id: 'fish.goldfish', name: '노을 금붕어', kind: 'fish', layers: ['mid'], mood: { temp: 0.8, energy: 0.1 }, maxPerTank: 2, baseScale: 1 },
-    { id: 'fish.bluefin', name: '푸른 밤 물고기', kind: 'fish', layers: ['mid'], mood: { temp: -0.5, energy: -0.4 }, maxPerTank: 4, baseScale: 1 },
-    { id: 'fish.foxfish', name: '여우 물고기', kind: 'fish', layers: ['mid'], mood: { temp: 0.6, energy: 0.2 }, maxPerTank: 1, baseScale: 1.2, finaleOnly: true },
+    { id: 'fish.medaka', name: '모래빛 송사리', kind: 'fish', layers: ['mid'], mood: { temp: 0.3, energy: 0.5 }, maxPerTank: 5, bodyHeight: 36, baseScale: 1 },
+    { id: 'fish.goldfish', name: '노을 금붕어', kind: 'fish', layers: ['mid'], mood: { temp: 0.8, energy: 0.1 }, maxPerTank: 2, bodyHeight: 100, baseScale: 1 },
+    { id: 'fish.bluefin', name: '푸른 밤 물고기', kind: 'fish', layers: ['mid'], mood: { temp: -0.5, energy: -0.4 }, maxPerTank: 4, bodyHeight: 92, baseScale: 1 },
+    { id: 'fish.foxfish', name: '여우 물고기', kind: 'fish', layers: ['mid'], mood: { temp: 0.6, energy: 0.2 }, maxPerTank: 1, bodyHeight: 92, baseScale: 1.2, finaleOnly: true },
     { id: 'plant.stem', name: '모래풀', kind: 'plant', layers: ['back'], mood: { temp: 0.1, energy: -0.4 }, maxPerTank: 4, baseScale: 0.8 },
     { id: 'plant.leafy', name: '잎 풍성한 수초', kind: 'plant', layers: ['back', 'front'], mood: { temp: 0.6, energy: 0.2 }, maxPerTank: 3, baseScale: 0.8 },
     { id: 'plant.foxtail', name: '여우꼬리풀', kind: 'plant', layers: ['back'], mood: { temp: -0.2, energy: -0.3 }, maxPerTank: 2, baseScale: 0.8 },
