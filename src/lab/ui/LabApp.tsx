@@ -12,12 +12,13 @@ import { LONG_CHECKPOINTS, LONG_DURATIONS } from '../samples';
 import type { RunResult, SampleScenario } from '../types';
 import { derivedTanks, fingerprintOf, LAB_IMPORT_KEY, parseUserData, userRun, verifyUserData, type IntegrityReport } from '../userData';
 import { StyleCompare } from './StyleCompare';
+import { PerfTab } from './PerfTab';
 import { DailyTable, DistanceMatrix, FinalTable, FrameModal, Gallery, LineChart, OriginBadge, SERIES_COLORS, Thumb, type OpenFrame } from './components';
 
 /** 수치상 구별을 시각적 구별로 오해하지 않게 하는 안내(리뷰 반영). 보고서에도 같은 뜻으로 들어간다. */
 const VISUAL_CAVEAT = '위 감정 구별은 엔진 상태(물빛 조명값·요소 구성)로 계산한 상대적인 수치 지표이고, 지금 샘플과 지금 가중치에서만 성립해요. 실제 관장이 그림을 보고 한눈에 구별할 수 있다는 뜻은 아니에요. 지금 그림은 임시 SVG이고 같은 테마에 물고기가 3종뿐이라, 화면에서 느끼는 차이는 수치보다 작을 수 있어요. 시각적 구별은 짝짓기 테스트(지인 5명 이상, 기준 4/5)로 따로 확인해야 해요.';
 
-type Tab = 'overview' | 'cases' | 'compare' | 'long' | 'hyp' | 'match' | 'style' | 'user';
+type Tab = 'overview' | 'cases' | 'compare' | 'long' | 'hyp' | 'match' | 'style' | 'perf' | 'user';
 
 const TABS: Array<[Tab, string]> = [
   ['overview', '개요'],
@@ -27,13 +28,14 @@ const TABS: Array<[Tab, string]> = [
   ['hyp', '가설 H1~H11'],
   ['match', '짝짓기 테스트'],
   ['style', '그래픽 비교'],
+  ['perf', '성능 측정'],
   ['user', '실제 기록'],
 ];
 
 export function LabApp() {
   const suite = useMemo<SuiteResult>(() => runSuite(), []);
   const hyps = useMemo(() => evaluateHypotheses(suite), [suite]);
-  const [tab, setTab] = useState<Tab>(() => (location.hash === '#user' ? 'user' : location.hash === '#style' ? 'style' : 'overview'));
+  const [tab, setTab] = useState<Tab>(() => (location.hash === '#user' ? 'user' : location.hash === '#style' ? 'style' : location.hash === '#perf' ? 'perf' : 'overview'));
   const [open, setOpen] = useState<OpenFrame | null>(null);
   const [caseId, setCaseId] = useState('case-A');
   const [cmpId, setCmpId] = useState('cmp-emotion');
@@ -72,6 +74,7 @@ export function LabApp() {
       {tab === 'hyp' && <HypTab hyps={hyps} onScenario={goScenario} />}
       {tab === 'match' && <MatchTab suite={suite} />}
       {tab === 'style' && <StyleCompare suite={suite} />}
+      {tab === 'perf' && <PerfTab suite={suite} />}
       {tab === 'user' && <UserTab onOpen={setOpen} />}
 
       <FrameModal open={open} onClose={() => setOpen(null)} />

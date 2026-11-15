@@ -2,9 +2,16 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { AquariumRenderer, type RenderOptions } from '../render/AquariumRenderer';
 import type { TankState } from '../engine/types';
 import type { AssetOverrides } from '../assets/manifest';
+import type { RenderQuality } from '../render/quality';
 
 export interface AquariumCanvasHandle {
   playCleaning(): void;
+  /** 성능 측정용 렌더링 정보(렌더러가 아직 없으면 null) */
+  renderInfo(): ReturnType<AquariumRenderer['info']> | null;
+  /** 어항이 실제로 그린 프레임 기록(성능 측정) */
+  renderFrames(): ReturnType<AquariumRenderer['frames']> | null;
+  /** 진단용 어항 갱신 제한: 0 제한 없음, 음수 멈춤 */
+  setFrameLimit(maxFps: number): void;
 }
 
 interface Props {
@@ -15,10 +22,12 @@ interface Props {
   /** 이전 조명 방식(덧칠)으로 그리기 — 검증실 비교용 */
   legacyLighting?: boolean;
   label?: string;
+  /** 렌더링 품질. 바뀌면 같은 렌더러에서 바로 적용(다시 만들지 않음) */
+  quality?: RenderQuality;
 }
 
 /** PixiJS 렌더러를 React에 붙이는 얇은 껍데기. 상태는 props로만 받는다. */
-export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, legacyLighting, label = '내 어항' }, ref) {
+export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, legacyLighting, label = '내 어항', quality = 'normal' }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const renderer = useRef<AquariumRenderer | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
@@ -30,7 +39,7 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
     const r = new AquariumRenderer();
     renderer.current = r;
     r.setState(state, options);
-    r.init(host.current, { overrides: assetOverrides, legacyLighting })
+    r.init(host.current, { overrides: assetOverrides, legacyLighting, quality })
       .then((m) => { setMissing(m); setLoading(false); })
       .catch((e: unknown) => { setError(String(e)); setLoading(false); });
     return () => {
@@ -45,7 +54,18 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
     renderer.current?.setState(state, options);
   }, [state, options]);
 
-  useImperativeHandle(ref, () => ({ playCleaning: () => renderer.current?.playCleaning() }), []);
+  useEffect(() => {
+    renderer.current?.setQuality(quality);
+  }, [quality]);
+
+  useImperativeHandle(ref, () => ({
+    playCleaning: () => renderer.current?.playCleaning(),
+    renderInfo: () => {
+      try { return loading ? null : renderer.current?.info() ?? null; } catch { return null; }
+    },
+    renderFrames: () => (loading ? null : renderer.current?.frames() ?? null),
+    setFrameLimit: (n: number) => renderer.current?.setFrameLimit(n),
+  }), [loading]);
 
   return (
     <div className="aquarium-wrap">

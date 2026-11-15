@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AquariumCanvas, type AquariumCanvasHandle } from './ui/AquariumCanvas';
+import { PerfPanel, perfEnabled } from './ui/PerfPanel';
+import type { RenderQuality } from './render/quality';
+import type { PerfResult } from './perf/report';
 import { useDialog, type AskOptions, type AskResult } from './ui/Dialog';
 import { BASE_CHIPS, analyzeMood } from './engine/mood';
 import { TankSession, type NewEntry } from './engine/session';
@@ -48,6 +51,11 @@ export function App() {
   const [version, setVersion] = useState(0);
   const bump = () => setVersion((v) => v + 1);
   const canvas = useRef<AquariumCanvasHandle>(null);
+  // 성능 측정 패널: 개발 서버나 ?perf=1 에서만(일반 사용자 화면에는 없음)
+  const [showPerf] = useState(perfEnabled);
+  const [quality, setQuality] = useState<RenderQuality>('normal');
+  const [perfResults, setPerfResults] = useState<PerfResult[]>([]);
+  const onPerfResult = useCallback((r: PerfResult) => setPerfResults((x) => [...x, r]), []);
   const [lastChanges, setLastChanges] = useState<{ title: string; changes: Change[] } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
@@ -177,7 +185,10 @@ export function App() {
 
       <main className="grid">
         <section className="left">
-          <AquariumCanvas ref={canvas} state={head.state} options={options} />
+          <AquariumCanvas ref={canvas} state={head.state} options={options} quality={quality} />
+          {showPerf && (
+            <PerfPanel canvas={canvas} scene="지금 어항(데모)" quality={quality} onQuality={setQuality} results={perfResults} onResult={onPerfResult} onClear={() => setPerfResults([])} />
+          )}
           <div className="status-row">
             <span className="pill">{s.lifecycle === 'active' ? (moss.resting ? '쉬는 중' : '진행 중') : s.lifecycle === 'completed' ? '완성' : '마무리'}</span>
             {total ? <span>{s.displayProgress()} / {total}쪽</span> : <span>{s.displayProgress()}쪽</span>}
