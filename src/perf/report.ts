@@ -1,6 +1,17 @@
 import { ENGINE_VERSION } from '../engine/config';
 import { QUALITY_LABEL, type RenderQuality } from '../render/quality';
 import { sourceLabel, type Declared, type EnvInfo } from './env';
+
+/** 같은 조건끼리 비교하려고 측정자가 적는 측정 조건 */
+export interface MeasureConditions {
+  model: string;
+  browser: string;
+  powerSaving: 'on' | 'off' | 'unknown';
+  brightness: string;
+}
+
+export const EMPTY_CONDITIONS: MeasureConditions = { model: '', browser: '', powerSaving: 'unknown', brightness: '' };
+const POWER_LABEL = { on: '켬', off: '끔', unknown: '모름' } as const;
 import type { FrameStats } from './frameStats';
 
 export interface RenderInfo {
@@ -52,13 +63,13 @@ export function formatResult(r: PerfResult): string {
     `  어항 프레임 시간 평균 ${f1(a.meanMs)}ms · 99% ${f1(a.p99Ms)}ms · 최대 ${f1(a.maxMs)}ms · 33ms 넘은 프레임 ${a.longFrames}개(${f1(a.longShare * 100)}%)`,
     `  [진단] 브라우저 갱신 간격(rAF, 어항 성능 아님) 평균 ${f1(r.raf.avgFps)}fps · 1% 느린 ${f1(r.raf.low1Fps)}fps`,
     `  해상도 DPR ${r.render.dpr} → 렌더링 ${r.render.resolution} · 캔버스 ${r.render.canvasCss.join('×')} (실제 픽셀 ${r.render.canvasPx.join('×')}) · ${r.render.backend}`,
-    `  어항 구성 물고기 ${r.objects.fish} · 수초 ${r.objects.plant} · 수석 ${r.objects.rock} · 상징 ${r.objects.symbol}${r.gaps ? ` · 1초 넘게 멈춰 버린 간격 ${r.gaps}개` : ''}`,
+    `  어항 구성 물고기 ${r.objects.fish} · 수초 ${r.objects.plant} · 수석 ${r.objects.rock} · 상징 ${r.objects.symbol}${r.gaps ? ` · 측정 중 1초 넘게 멈춘 구간 ${r.gaps}번` : ''}`,
   );
   return lines.join('\n');
 }
 
 /** 복사용 텍스트. 맨 위에 측정 출처(실기기/시뮬레이션)를 적는다 */
-export function formatReport(results: PerfResult[], env: EnvInfo, declared: Declared): string {
+export function formatReport(results: PerfResult[], env: EnvInfo, declared: Declared, cond: MeasureConditions = EMPTY_CONDITIONS): string {
   const src = sourceLabel(env, declared);
   return [
     `# 이루리움 어항 성능 측정 (엔진 ${ENGINE_VERSION})`,
@@ -66,6 +77,7 @@ export function formatReport(results: PerfResult[], env: EnvInfo, declared: Decl
     `자동 판정: ${env.kind === 'mobile' ? '휴대폰' : env.kind === 'simulated' ? '시뮬레이션' : '데스크톱'} (${env.reasons.join(', ')})`,
     `기기: ${env.userAgent}`,
     `CPU 코어 ${env.cores ?? '알 수 없음'} · 메모리 ${env.memoryGb != null ? `${env.memoryGb}GB 이상` : '알 수 없음'}`,
+    `측정 조건(측정자 기록): 기종 ${cond.model.trim() || '안 적음'} · 브라우저 ${cond.browser.trim() || '안 적음'} · 절전 모드 ${POWER_LABEL[cond.powerSaving]} · 화면 밝기 ${cond.brightness.trim() || '안 적음'}`,
     '',
     ...results.map(formatResult),
   ].join('\n');

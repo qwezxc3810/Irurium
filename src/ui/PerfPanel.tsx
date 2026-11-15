@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import './perf.css';
 import type { AquariumCanvasHandle } from './AquariumCanvas';
 import { QUALITY_LABEL, type RenderQuality } from '../render/quality';
-import { currentEnvironment, sourceLabel, type Declared } from '../perf/env';
+import { currentEnvironment, guessBrowser, sourceLabel, type Declared } from '../perf/env';
 import { computeFrameStats, RafMeter, type FrameStats } from '../perf/frameStats';
-import { formatReport, limitLabel, type PerfResult } from '../perf/report';
+import { EMPTY_CONDITIONS, formatReport, limitLabel, type MeasureConditions, type PerfResult } from '../perf/report';
 
 /**
  * 성능 측정 패널(개발·검증 환경 전용). 일반 사용자 화면에는 붙이지 않는다(perfEnabled 참고).
@@ -23,6 +23,7 @@ export function perfEnabled(): boolean {
 }
 
 const f1 = (x: number) => (Number.isFinite(x) ? x.toFixed(1) : '-');
+
 
 interface Props {
   canvas: RefObject<AquariumCanvasHandle | null>;
@@ -47,6 +48,7 @@ interface Run {
 export function PerfPanel({ canvas, scene, quality, onQuality, results, onResult, onClear }: Props) {
   const env = useMemo(() => currentEnvironment(), []);
   const [declared, setDeclared] = useState<Declared>('unset');
+  const [cond, setCond] = useState<MeasureConditions>(() => ({ ...EMPTY_CONDITIONS, browser: guessBrowser(navigator.userAgent) }));
   const raf = useRef(new RafMeter());
   const [live, setLive] = useState<{ aq: FrameStats; raf: FrameStats } | null>(null);
   const [info, setInfo] = useState<ReturnType<AquariumCanvasHandle['renderInfo']>>(null);
@@ -112,6 +114,7 @@ export function PerfPanel({ canvas, scene, quality, onQuality, results, onResult
       const aqRec = canvas.current?.renderFrames();
       const ri = canvas.current?.renderInfo();
       const aq = computeFrameStats(aqRec ? aqRec.between(run.start, end) : []);
+      const stalls = aqRec ? aqRec.gapsBetween(run.start, end) : 0;
       onResult({
         scene: run.scene, quality: run.quality,
         plannedSeconds: MEASURE_SECONDS, measuredMs: end - run.start, warmupMs: WARMUP_MS,
@@ -121,9 +124,10 @@ export function PerfPanel({ canvas, scene, quality, onQuality, results, onResult
           ? { dpr: ri.dpr, resolution: ri.resolution, canvasCss: ri.canvasCss, canvasPx: ri.canvasPx, backend: ri.backend }
           : { dpr: window.devicePixelRatio || 1, resolution: 0, canvasCss: [0, 0], canvasPx: [0, 0], backend: '알 수 없음' },
         invalid: run.hidden ? '측정 중 화면이 숨겨졌어요(다른 앱·화면 꺼짐). 숨김 구간은 뺐지만 다시 재 주세요'
-          : aq.frames === 0 ? '어항 프레임이 기록되지 않았어요' : null,
+          : aq.frames === 0 ? '어항 프레임이 기록되지 않았어요'
+          : stalls > 0 ? `화면이 보이는 동안 어항이 1초 넘게 멈춘 구간이 ${stalls}번 있었어요. 그 간격은 FPS 계산에서 빠져서 실제보다 좋게 나올 수 있어요` : null,
         frameLimit: run.limit,
-        gaps: aqRec?.gaps ?? 0,
+        gaps: stalls,
         at: new Date().toLocaleTimeString('ko-KR', { hour12: false }),
         objects: ri ? ri.drawn : { fish: 0, plant: 0, rock: 0, symbol: 0 },
       });
@@ -138,7 +142,7 @@ export function PerfPanel({ canvas, scene, quality, onQuality, results, onResult
     setRun({ phase: 'warmup', clicked: now, start: 0, scene, quality, limit, hidden: false });
   };
 
-  const report = formatReport(results, env, declared);
+  const report = formatReport(results, env, declared, cond);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(report);
@@ -200,6 +204,13 @@ export function PerfPanel({ canvas, scene, quality, onQuality, results, onResult
           <label><input type="radio" name="perf-declared" checked={declared === 'not-real'} onChange={() => setDeclared('not-real')} /> 아니에요(PC·개발자 도구 흉내)</label>
         </div>
         <p className={src.real ? 'perf-src-line real' : 'perf-src-line sim'}>측정 출처: {src.text}</p>
+        <div className="perf-cond">
+          <label>기종 <input value={cond.model} placeholder="예: 갤럭시 A15" onChange={(e) => setCond({ ...cond, model: e.target.value })} /></label>
+          <label>브라우저 <input value={cond.browser} placeholder="예: 삼성 인터넷" onChange={(e) => setCond({ ...cond, browser: e.target.value })} /></label>
+          <label>절전 모드 <select value={cond.powerSaving} onChange={(e) => setCond({ ...cond, powerSaving: e.target.value as MeasureConditions['powerSaving'] })}><option value="unknown">모름</option><option value="off">끔</option><option value="on">켬</option></select></label>
+          <label>화면 밝기 <input value={cond.brightness} placeholder="예: 자동, 50%" onChange={(e) => setCond({ ...cond, brightness: e.target.value })} /></label>
+        </div>
+        <p className="perf-hint">같은 조건끼리 비교하려고 적어요. 결과 텍스트에 같이 들어가요.</p>
       </fieldset>
 
       {results.length > 0 && (

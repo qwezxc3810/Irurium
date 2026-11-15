@@ -6,7 +6,7 @@ import { TankSession } from '../../engine/session';
 import { frameAt, runSuite } from '../../lab/runner';
 import { PERF_SCENES } from '../../lab/perfScenes';
 import { QUALITY, qualityResolution } from '../../render/quality';
-import { detectEnvironment, sourceLabel } from '../env';
+import { detectEnvironment, guessBrowser, sourceLabel } from '../env';
 import rendererSource from '../../render/AquariumRenderer.ts?raw';
 import { computeFrameStats, FrameRecorder } from '../frameStats';
 import { formatReport, type PerfResult } from '../report';
@@ -88,6 +88,17 @@ describe('측정 환경: 실제 휴대폰과 시뮬레이션 구분', () => {
     const bad = formatReport([{ ...r, invalid: '측정 중 화면이 숨겨졌어요', frameLimit: 15 }], detectEnvironment({ userAgent: DESKTOP }), 'unset');
     expect(bad).toContain('⚠️ 무효(참고용): 측정 중 화면이 숨겨졌어요');
     expect(bad).toContain('진단용 어항 갱신 제한: 15fps 제한');
+    const cond = formatReport([r], detectEnvironment({ userAgent: ANDROID, maxTouchPoints: 5 }), 'real-phone', { model: '갤럭시 A15', browser: '삼성 인터넷 27', powerSaving: 'off', brightness: '자동' });
+    expect(cond).toContain('측정 조건(측정자 기록): 기종 갤럭시 A15 · 브라우저 삼성 인터넷 27 · 절전 모드 끔 · 화면 밝기 자동');
+    expect(formatReport([r], detectEnvironment({ userAgent: DESKTOP }), 'unset')).toContain('기종 안 적음 · 브라우저 안 적음 · 절전 모드 모름 · 화면 밝기 안 적음');
+  });
+
+  it('브라우저 이름 추정(인앱 브라우저 먼저)', () => {
+    expect(guessBrowser(ANDROID)).toBe('크롬 130');
+    expect(guessBrowser(IPHONE)).toBe('사파리 18');
+    expect(guessBrowser('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0 Mobile Safari/537.36')).toBe('삼성 인터넷 27');
+    expect(guessBrowser(ANDROID + ' KAKAOTALK 10.8.0')).toBe('카카오톡 인앱');
+    expect(guessBrowser('unknown')).toBe('');
   });
 });
 
@@ -106,6 +117,9 @@ describe('프레임 기록기', () => {
     expect(rec.between(0, 1000)).toEqual([16, 16]);
     rec.mark(3000);
     expect(rec.gaps).toBe(1);
+    // 측정 구간 안에서 멈춘 횟수만 센다
+    expect(rec.gapsBetween(0, 2000)).toBe(0);
+    expect(rec.gapsBetween(2000, 3500)).toBe(1);
   });
 });
 

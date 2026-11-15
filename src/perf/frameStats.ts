@@ -52,13 +52,17 @@ export function computeFrameStats(deltas: readonly number[]): FrameStats {
 export class FrameRecorder {
   private deltas: number[] = [];
   private stamps: number[] = [];
+  private gapStamps: number[] = [];
   private last: number | null = null;
   gaps = 0;
 
   mark(now: number) {
     if (this.last !== null) {
       const dt = now - this.last;
-      if (dt > 1000) this.gaps++;
+      if (dt > 1000) {
+        this.gaps++;
+        this.gapStamps.push(now);
+      }
       else if (dt > 0) {
         this.deltas.push(dt);
         this.stamps.push(now);
@@ -85,6 +89,11 @@ export class FrameRecorder {
     return out;
   }
 
+  /** 측정 구간 안에서 1초 넘게 멈춰 버린 간격 수 */
+  gapsBetween(from: number, to: number): number {
+    return this.gapStamps.filter((t) => t > from && t <= to).length;
+  }
+
   recent(windowMs: number, now: number): number[] {
     return this.between(now - windowMs, now);
   }
@@ -92,6 +101,7 @@ export class FrameRecorder {
   clear() {
     this.deltas = [];
     this.stamps = [];
+    this.gapStamps = [];
     this.last = null;
     this.gaps = 0;
   }

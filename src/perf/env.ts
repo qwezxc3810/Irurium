@@ -65,3 +65,23 @@ export function currentEnvironment(): EnvInfo {
     deviceMemory: n.deviceMemory,
   });
 }
+
+/** 브라우저 이름 추정(측정자가 고칠 수 있게 미리 채움). 인앱 브라우저를 먼저 본다 */
+export function guessBrowser(ua: string): string {
+  const major = (re: RegExp) => ua.match(re)?.[1]?.split('.')[0];
+  if (/KAKAOTALK/i.test(ua)) return '카카오톡 인앱';
+  if (/NAVER\(inapp|\bNAVER\b/.test(ua)) return '네이버 앱';
+  const rules: Array<[RegExp, string]> = [
+    [/SamsungBrowser\/([\d.]+)/, '삼성 인터넷'],
+    [/CriOS\/([\d.]+)/, '크롬(iOS)'],
+    [/Edg\/([\d.]+)/, '엣지'],
+    [/Firefox\/([\d.]+)/, '파이어폭스'],
+    [/Chrome\/([\d.]+)/, '크롬'],
+    [/Version\/([\d.]+).*Safari/, '사파리'],
+  ];
+  for (const [re, name] of rules) {
+    const v = major(re);
+    if (v) return `${name} ${v}`;
+  }
+  return '';
+}
