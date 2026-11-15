@@ -8,6 +8,10 @@ export interface AquariumCanvasHandle {
   playCleaning(): void;
   /** 성능 측정용 렌더링 정보(렌더러가 아직 없으면 null) */
   renderInfo(): ReturnType<AquariumRenderer['info']> | null;
+  /** 어항이 실제로 그린 프레임 기록(성능 측정) */
+  renderFrames(): ReturnType<AquariumRenderer['frames']> | null;
+  /** 진단용 어항 갱신 제한: 0 제한 없음, 음수 멈춤 */
+  setFrameLimit(maxFps: number): void;
 }
 
 interface Props {
@@ -59,6 +63,8 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
     renderInfo: () => {
       try { return loading ? null : renderer.current?.info() ?? null; } catch { return null; }
     },
+    renderFrames: () => (loading ? null : renderer.current?.frames() ?? null),
+    setFrameLimit: (n: number) => renderer.current?.setFrameLimit(n),
   }), [loading]);
 
   return (

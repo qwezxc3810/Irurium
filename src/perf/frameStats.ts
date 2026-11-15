@@ -44,33 +44,74 @@ export function computeFrameStats(deltas: readonly number[]): FrameStats {
 }
 
 /**
- * requestAnimationFrame 사이 간격을 잰다. 렌더러와 따로 돌아서 화면 전체가 실제로 몇 번 그려졌는지 본다.
- * 탭이 백그라운드로 가면(간격 > 1초) 그 간격은 버리고 표시한다.
+ * 프레임 시각을 받아 간격을 쌓는다. 어항(PixiJS 렌더링 프레임)과 브라우저 갱신(rAF)이 같은 기록기를 쓴다.
+ * - 1초 넘는 간격은 멈춤으로 보고 버린다(gaps).
+ * - pause(): 화면이 숨겨졌을 때 부른다. 다음 프레임은 새로 시작해서, 숨김 구간 간격이 섞이지 않는다.
+ * - between(from, to): 측정 구간(시작~끝 시각)에 끝난 간격만 꺼낸다. 타이머가 늦게 돌아도 구간 밖 프레임은 들어가지 않는다.
  */
-export class FrameMeter {
+export class FrameRecorder {
   private deltas: number[] = [];
-  private last = 0;
+  private stamps: number[] = [];
+  private last: number | null = null;
+  gaps = 0;
+
+  mark(now: number) {
+    if (this.last !== null) {
+      const dt = now - this.last;
+      if (dt > 1000) this.gaps++;
+      else if (dt > 0) {
+        this.deltas.push(dt);
+        this.stamps.push(now);
+      }
+    }
+    this.last = now;
+    if (this.deltas.length > 20000) {
+      this.deltas = this.deltas.slice(-10000);
+      this.stamps = this.stamps.slice(-10000);
+    }
+  }
+
+  pause() {
+    this.last = null;
+  }
+
+  between(from: number, to: number): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < this.stamps.length; i++) {
+      const t = this.stamps[i]!;
+      // 간격 전체가 구간 안에 있을 때만
+      if (t - this.deltas[i]! >= from && t <= to) out.push(this.deltas[i]!);
+    }
+    return out;
+  }
+
+  recent(windowMs: number, now: number): number[] {
+    return this.between(now - windowMs, now);
+  }
+
+  clear() {
+    this.deltas = [];
+    this.stamps = [];
+    this.last = null;
+    this.gaps = 0;
+  }
+}
+
+/**
+ * 브라우저 갱신 간격(진단용). 렌더러와 따로 requestAnimationFrame을 돈다.
+ * 어항이 실제로 그린 횟수가 아니다. 어항 렌더러가 느리거나 멈춰도 이 값은 화면 주사율 가까이 나올 수 있다.
+ */
+export class RafMeter {
+  readonly rec = new FrameRecorder();
   private raf = 0;
   private running = false;
-  private window: number;
-  hidden = 0;
-
-  constructor(windowMs = 2000) {
-    this.window = windowMs;
-  }
 
   start() {
     if (this.running) return;
     this.running = true;
-    this.last = 0;
     const loop = (t: number) => {
       if (!this.running) return;
-      if (this.last) {
-        const dt = t - this.last;
-        if (dt > 1000) this.hidden++;
-        else this.deltas.push(dt);
-      }
-      this.last = t;
+      this.rec.mark(t);
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
@@ -79,24 +120,5 @@ export class FrameMeter {
   stop() {
     this.running = false;
     cancelAnimationFrame(this.raf);
-  }
-
-  reset() {
-    this.deltas = [];
-    this.hidden = 0;
-  }
-
-  /** 지금까지 모은 전체 */
-  all(): number[] {
-    return [...this.deltas];
-  }
-
-  /** 최근 windowMs 만큼 */
-  recent(): number[] {
-    let sum = 0;
-    let i = this.deltas.length;
-    while (i > 0 && sum < this.window) sum += this.deltas[--i]!;
-    if (this.deltas.length > 20000) this.deltas = this.deltas.slice(-5000);
-    return this.deltas.slice(i);
   }
 }

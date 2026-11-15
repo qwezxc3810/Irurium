@@ -7,7 +7,8 @@ import { frameAt, runSuite } from '../../lab/runner';
 import { PERF_SCENES } from '../../lab/perfScenes';
 import { QUALITY, qualityResolution } from '../../render/quality';
 import { detectEnvironment, sourceLabel } from '../env';
-import { computeFrameStats } from '../frameStats';
+import rendererSource from '../../render/AquariumRenderer.ts?raw';
+import { computeFrameStats, FrameRecorder } from '../frameStats';
 import { formatReport, type PerfResult } from '../report';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
@@ -67,20 +68,79 @@ describe('측정 환경: 실제 휴대폰과 시뮬레이션 구분', () => {
     expect(sourceLabel(desk, 'real-phone').real).toBe(false);
   });
 
-  it('복사 텍스트 맨 위에 측정 출처가 적힌다', () => {
+  it('복사 텍스트: 맨 위 측정 출처, 어항 FPS가 1차 지표, rAF는 진단으로 따로', () => {
     const r: PerfResult = {
-      scene: '꾸준형 200일', quality: 'low', seconds: 30, stats: computeFrameStats(Array(1800).fill(1000 / 60)),
+      scene: '꾸준형 200일', quality: 'low', plannedSeconds: 30, measuredMs: 30140, warmupMs: 2000,
+      aquarium: computeFrameStats(Array(900).fill(1000 / 30)), raf: computeFrameStats(Array(1800).fill(1000 / 60)),
       render: { dpr: 3, resolution: 1, canvasCss: [360, 216], canvasPx: [360, 216], backend: 'webgl' },
-      hidden: 0, at: '17:00:00', objects: { fish: 4, plant: 9, rock: 5, symbol: 2 },
+      invalid: null, frameLimit: 0, gaps: 0, at: '17:00:00', objects: { fish: 4, plant: 9, rock: 5, symbol: 2 },
     };
     const sim = formatReport([r], detectEnvironment({ userAgent: HEADLESS }), 'unset').split('\n');
     expect(sim[0]).toContain(`엔진 ${ENGINE_VERSION}`);
     expect(sim[1]).toMatch(/^측정 출처: ⚠️ 개발 환경 시뮬레이션/);
     const real = formatReport([r], detectEnvironment({ userAgent: ANDROID, maxTouchPoints: 5 }), 'real-phone');
     expect(real.split('\n')[1]).toBe('측정 출처: ✅ 실제 휴대폰(측정자 확인)');
-    expect(real).toContain('꾸준형 200일 · 저사양 모드 · 30초');
-    expect(real).toContain('평균 60.0 fps · 1% 느린 프레임 60.0 fps');
+    expect(real).toContain('꾸준형 200일 · 저사양 모드 · 실측 30.1초(워밍업 2초 뒤)');
+    expect(real).toContain('어항 FPS(PixiJS 렌더링 프레임) 평균 30.0 · 1% 느린 프레임 30.0');
+    expect(real).toContain('[진단] 브라우저 갱신 간격(rAF, 어항 성능 아님) 평균 60.0fps');
     expect(real).toContain('DPR 3 → 렌더링 1');
+    expect(real).not.toContain('무효');
+    const bad = formatReport([{ ...r, invalid: '측정 중 화면이 숨겨졌어요', frameLimit: 15 }], detectEnvironment({ userAgent: DESKTOP }), 'unset');
+    expect(bad).toContain('⚠️ 무효(참고용): 측정 중 화면이 숨겨졌어요');
+    expect(bad).toContain('진단용 어항 갱신 제한: 15fps 제한');
+  });
+});
+
+describe('프레임 기록기', () => {
+  it('측정 구간(시작~끝) 안에서 끝난 간격만 꺼낸다(타이머가 늦어도 구간 밖은 빠짐)', () => {
+    const rec = new FrameRecorder();
+    for (let t = 0; t <= 2000; t += 20) rec.mark(t);
+    const d = rec.between(500, 1500);
+    expect(d.length).toBe(50);
+    expect(d.reduce((a, b) => a + b, 0)).toBe(1000);
+  });
+
+  it('pause() 뒤 첫 간격은 버린다(숨김 구간이 섞이지 않음), 1초 넘는 간격은 gaps로', () => {
+    const rec = new FrameRecorder();
+    rec.mark(0); rec.mark(16); rec.pause(); rec.mark(600); rec.mark(616);
+    expect(rec.between(0, 1000)).toEqual([16, 16]);
+    rec.mark(3000);
+    expect(rec.gaps).toBe(1);
+  });
+});
+
+describe('어항 FPS와 브라우저 rAF 분리', () => {
+  /** PixiJS Ticker처럼 maxFPS면 최소 간격이 지나야 갱신, 멈추면 갱신 없음 */
+  function simulate(maxFps: number, stopped: boolean) {
+    const aq = new FrameRecorder();
+    const raf = new FrameRecorder();
+    let lastTick = -Infinity;
+    const minGap = maxFps > 0 ? 1000 / maxFps : 0;
+    for (let i = 0; i <= 60 * 10; i++) {
+      const t = i * (1000 / 60);
+      raf.mark(t); // 브라우저 갱신은 늘 60Hz
+      if (stopped) continue;
+      if (t - lastTick + 0.5 >= minGap) { lastTick = t; aq.mark(t); } // 어항은 그린 프레임만
+    }
+    return { aq: computeFrameStats(aq.between(0, 10000)), raf: computeFrameStats(raf.between(0, 10000)) };
+  }
+
+  it('어항 갱신을 30fps로 제한하면 어항 FPS만 줄고 rAF는 그대로', () => {
+    const free = simulate(0, false);
+    const capped = simulate(30, false);
+    expect(free.aq.avgFps).toBeCloseTo(60, 0);
+    expect(capped.aq.avgFps).toBeCloseTo(30, 0);
+    expect(capped.raf.avgFps).toBeCloseTo(60, 0);
+  });
+
+  it('어항이 멈추면 어항 프레임 0개, rAF는 그대로', () => {
+    const stopped = simulate(0, true);
+    expect(stopped.aq.frames).toBe(0);
+    expect(stopped.raf.avgFps).toBeCloseTo(60, 0);
+  });
+
+  it('렌더러가 PixiJS 그리기(LOW) 뒤 UTILITY 우선순위에서 어항 프레임을 기록한다', () => {
+    expect(rendererSource).toMatch(/ticker\.add\(\(\) => this\.renderFrames\.mark\(performance\.now\(\)\), undefined, UPDATE_PRIORITY\.UTILITY\)/);
   });
 });
 

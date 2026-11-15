@@ -14,27 +14,47 @@ export interface RenderInfo {
 export interface PerfResult {
   scene: string;
   quality: RenderQuality;
-  seconds: number;
-  stats: FrameStats;
+  /** 계획한 측정 시간(초)과 실제로 잰 구간 길이(ms, 시작~끝 시각) */
+  plannedSeconds: number;
+  measuredMs: number;
+  warmupMs: number;
+  /** 1차 지표: 어항 FPS(PixiJS가 실제로 그린 프레임) */
+  aquarium: FrameStats;
+  /** 진단: 브라우저 갱신 간격(독립 requestAnimationFrame). 어항 성능 판정에 쓰지 않는다 */
+  raf: FrameStats;
   render: RenderInfo;
-  /** 백그라운드로 가서 버린 간격 수 */
-  hidden: number;
+  /** 무효 사유(있으면 참고용) */
+  invalid: string | null;
+  /** 진단용 어항 갱신 제한(0이면 없음, 음수면 멈춤) */
+  frameLimit: number;
+  /** 1초 넘게 멈춰 버린 간격 수(어항) */
+  gaps: number;
   at: string;
-  /** 엔진 상태 요약(저사양 모드에서도 같아야 함) */
+  /** 화면에 그린 생물 수(저사양 모드에서도 같아야 함) */
   objects: { fish: number; plant: number; rock: number; symbol: number };
 }
 
 const f1 = (x: number) => x.toFixed(1);
 
+export function limitLabel(n: number): string {
+  return n < 0 ? '멈춤' : n > 0 ? `${n}fps 제한` : '제한 없음';
+}
+
 export function formatResult(r: PerfResult): string {
-  const s = r.stats;
-  return [
-    `- ${r.scene} · ${QUALITY_LABEL[r.quality]} 모드 · ${r.seconds}초 (${r.at})`,
-    `  평균 ${f1(s.avgFps)} fps · 1% 느린 프레임 ${f1(s.low1Fps)} fps`,
-    `  프레임 시간 평균 ${f1(s.meanMs)}ms · 99% ${f1(s.p99Ms)}ms · 최대 ${f1(s.maxMs)}ms · 33ms 넘은 프레임 ${s.longFrames}개(${f1(s.longShare * 100)}%)`,
+  const a = r.aquarium;
+  const lines = [
+    `- ${r.scene} · ${QUALITY_LABEL[r.quality]} 모드 · 실측 ${f1(r.measuredMs / 1000)}초(워밍업 ${r.warmupMs / 1000}초 뒤) (${r.at})`,
+  ];
+  if (r.invalid) lines.push(`  ⚠️ 무효(참고용): ${r.invalid}`);
+  if (r.frameLimit !== 0) lines.push(`  ⚠️ 진단용 어항 갱신 제한: ${limitLabel(r.frameLimit)} — 성능 값으로 쓰지 마세요`);
+  lines.push(
+    `  어항 FPS(PixiJS 렌더링 프레임) 평균 ${f1(a.avgFps)} · 1% 느린 프레임 ${f1(a.low1Fps)} (프레임 ${a.frames}개, 유효 시간 ${f1(a.durationMs / 1000)}초)`,
+    `  어항 프레임 시간 평균 ${f1(a.meanMs)}ms · 99% ${f1(a.p99Ms)}ms · 최대 ${f1(a.maxMs)}ms · 33ms 넘은 프레임 ${a.longFrames}개(${f1(a.longShare * 100)}%)`,
+    `  [진단] 브라우저 갱신 간격(rAF, 어항 성능 아님) 평균 ${f1(r.raf.avgFps)}fps · 1% 느린 ${f1(r.raf.low1Fps)}fps`,
     `  해상도 DPR ${r.render.dpr} → 렌더링 ${r.render.resolution} · 캔버스 ${r.render.canvasCss.join('×')} (실제 픽셀 ${r.render.canvasPx.join('×')}) · ${r.render.backend}`,
-    `  어항 구성 물고기 ${r.objects.fish} · 수초 ${r.objects.plant} · 수석 ${r.objects.rock} · 상징 ${r.objects.symbol}${r.hidden ? ` · 백그라운드로 가서 버린 간격 ${r.hidden}개` : ''}`,
-  ].join('\n');
+    `  어항 구성 물고기 ${r.objects.fish} · 수초 ${r.objects.plant} · 수석 ${r.objects.rock} · 상징 ${r.objects.symbol}${r.gaps ? ` · 1초 넘게 멈춰 버린 간격 ${r.gaps}개` : ''}`,
+  );
+  return lines.join('\n');
 }
 
 /** 복사용 텍스트. 맨 위에 측정 출처(실기기/시뮬레이션)를 적는다 */

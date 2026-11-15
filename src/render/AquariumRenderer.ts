@@ -1,9 +1,10 @@
 // 엄격한 보안 정책(CSP)에서 eval 없이 셰이더 코드를 만들도록 PixiJS 대체 구현을 켠다(호스팅 환경 호환).
 import 'pixi.js/unsafe-eval';
-import { Application, ColorMatrixFilter, Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { Application, ColorMatrixFilter, Container, Graphics, Sprite, UPDATE_PRIORITY, type Texture } from 'pixi.js';
 import { lightGrade } from './lighting';
 import { glowTexture, makeLightRays, makeStar, type FxView } from './proceduralFx';
 import { QUALITY, qualityResolution, type RenderQuality } from './quality';
+import { FrameRecorder } from '../perf/frameStats';
 
 /** 코드로 그리는 효과 목록(명시적 등록). 새 효과는 여기에 추가한다 */
 const PROCEDURAL_FX: Record<string, () => FxView> = {
@@ -84,6 +85,8 @@ export class AquariumRenderer {
   private still = false;
   /** 렌더링 품질(모바일 성능 검증). 그리는 방식만 바꾸고 상태·개수는 바꾸지 않는다 */
   private quality: RenderQuality = 'normal';
+  /** 어항 FPS: PixiJS가 실제로 화면을 그린 프레임 시각(그리기 뒤 UTILITY 우선순위에서 기록) */
+  private renderFrames = new FrameRecorder();
 
   /**
    * PixiJS를 시작하고 매니페스트의 그림을 불러온다. 불러오지 못한 파일 목록을 돌려준다.
@@ -148,6 +151,8 @@ export class AquariumRenderer {
     if (!this.still) {
       this.app.renderer.on('resize', () => this.layout());
       this.app.ticker.add((t) => this.tick(Math.min(0.05, t.deltaMS / 1000)));
+      // Application의 그리기(render)는 LOW 우선순위. UTILITY는 그 뒤에 돌아서, 실제로 그린 프레임만 기록된다
+      this.app.ticker.add(() => this.renderFrames.mark(performance.now()), undefined, UPDATE_PRIORITY.UTILITY);
     }
     this.ready = true;
     if (this.state) {
@@ -187,6 +192,23 @@ export class AquariumRenderer {
     const spec = QUALITY[this.quality];
     this.scene.filters = spec.colorGrade ? [this.grade] : [];
     if (this.glow) this.glow.visible = spec.glow;
+  }
+
+  /** 성능 측정용: 어항이 실제로 그린 프레임 기록 */
+  frames(): FrameRecorder {
+    return this.renderFrames;
+  }
+
+  /**
+   * 진단용(검증 화면 전용): 어항 갱신을 제한하거나 멈춘다. 측정기가 어항 FPS를 제대로 잡는지 확인할 때 쓴다.
+   * 0이면 제한 없음, 음수면 멈춤.
+   */
+  setFrameLimit(maxFps: number) {
+    if (!this.ready || this.still) return;
+    const t = this.app.ticker;
+    if (maxFps < 0) { t.stop(); return; }
+    t.maxFPS = maxFps;
+    if (!t.started) { this.renderFrames.pause(); t.start(); }
   }
 
   /** 성능 측정용: 실제 렌더링 해상도·캔버스 크기와 화면에 그리고 있는 생물 수 */
