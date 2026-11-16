@@ -5,7 +5,7 @@ import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios'
 import { TankSession } from '../../engine/session';
 import manifest from '../../../public/assets/manifest.json';
 import {
-  autoDistinct, autoMetrics, blindPair, chipsFor, compareRows, countedSessions, exclusionReason, formatV1Report, humanSummary, isBlindBreach, newSession,
+  autoDistinct, autoMetrics, blindPair, canStartEvaluation, chipsFor, REVEAL_FRESH_MS, REVEAL_HEARTBEAT_MS, compareRows, countedSessions, exclusionReason, formatV1Report, humanSummary, isBlindBreach, newSession,
   sessionProblems,
   parseSessions, runVisualSet, shuffleOrder, v1Verdict, V1_CRITERIA, VE_DAYS, vePairs, veTanks,
   type VeAnswer, type VeSession,
@@ -219,7 +219,7 @@ describe('세션 일관성 검사 (리뷰 반영)', () => {
   it('블라인드 위반: 평가 도중 정답 화면을 연 세션은 판정에서 뺀다', () => {
     const s = good();
     expect(isBlindBreach(s, null, '2026-11-16T01:00:00.000Z')).toBe(false);
-    expect(isBlindBreach(s, '2026-11-15T23:00:00.000Z', '2026-11-16T01:00:00.000Z')).toBe(false); // 시작 전에 연 것
+    expect(isBlindBreach(s, '2026-11-15T23:00:00.000Z', '2026-11-16T01:00:00.000Z')).toBe(false); // 시작 한참 전에 열었다 닫은 것
     expect(isBlindBreach(s, '2026-11-16T00:30:00.000Z', '2026-11-16T01:00:00.000Z')).toBe(true); // 도중에 연 것
     const breached = { ...s, blindBreach: true };
     expect(exclusionReason(breached)).toContain('블라인드 위반');
@@ -227,3 +227,48 @@ describe('세션 일관성 검사 (리뷰 반영)', () => {
     expect(v1Verdict(five).verdict).toBe('hold');
   });
 });
+
+describe('다중 탭 블라인드 (리뷰 반영)', () => {
+  /** 탭 둘이 같은 저장소를 쓰는 상황을 시각만으로 재현: 정답 화면은 열려 있는 동안 1초마다 시각을 남긴다 */
+  function simulate(resultsOpen: [number, number] | null, startAt: number, endAt: number) {
+    let revealedAt: string | null = null;
+    const iso = (ms: number) => new Date(ms).toISOString();
+    const beatsUntil = (until: number) => {
+      if (!resultsOpen) return;
+      for (let t = resultsOpen[0]; t <= Math.min(resultsOpen[1], until); t += REVEAL_HEARTBEAT_MS) revealedAt = iso(t);
+    };
+    beatsUntil(startAt);
+    const canStart = canStartEvaluation(revealedAt, startAt);
+    beatsUntil(endAt);
+    const session = { startedAt: iso(startAt) };
+    return { canStart, breach: isBlindBreach(session, revealedAt, iso(endAt)) };
+  }
+  const T = Date.UTC(2026, 10, 16, 1);
+
+  it('결과 탭을 먼저 열어 둔 채 다른 탭에서 평가를 시작하려 하면 막는다', () => {
+    expect(simulate([T, T + 60_000], T + 30_000, T + 600_000).canStart).toBe(false);
+  });
+
+  it('막혀도 시작했다고 치면(결과 탭을 계속 열어 둠), 완료할 때 블라인드 위반으로 잡힌다', () => {
+    expect(simulate([T, T + 600_000], T + 30_000, T + 400_000).breach).toBe(true);
+  });
+
+  it('결과 탭을 먼저 열고, 평가 도중에 보던 경로(열어 둔 채 평가 → 기존 결과 화면 열람 → 완료)도 위반', () => {
+    // 평가 시작 전부터 열려 있다가 평가 중간(시작 +2분)에 닫힘
+    expect(simulate([T, T + 150_000], T + 30_000, T + 600_000).breach).toBe(true);
+  });
+
+  it('평가 도중 다른 탭에서 결과를 잠깐 열었다 닫아도 위반', () => {
+    expect(simulate([T + 200_000, T + 203_000], T, T + 600_000).breach).toBe(true);
+  });
+
+  it('결과 화면을 닫고 충분히 지난 뒤 시작하면 시작할 수 있고 위반도 아니다', () => {
+    const r = simulate([T, T + 10_000], T + 10_000 + REVEAL_FRESH_MS + 1000, T + 600_000);
+    expect(r).toEqual({ canStart: true, breach: false });
+  });
+
+  it('평가가 끝난 뒤에 결과를 연 것은 위반이 아니다', () => {
+    expect(simulate([T + 700_000, T + 800_000], T, T + 600_000).breach).toBe(false);
+  });
+});
+

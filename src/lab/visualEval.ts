@@ -314,11 +314,28 @@ export function parseSessions(text: string): VeSession[] {
   });
 }
 
-/** 정답 화면을 연 시각이 이 세션 평가 도중(시작 뒤, 끝나기 전)이면 블라인드 위반 */
+/**
+ * 정답 화면은 열려 있는 동안 REVEAL_HEARTBEAT_MS마다 '마지막으로 열려 있던 시각'을 남긴다.
+ * 이 시각이 REVEAL_FRESH_MS 안이면 지금 어느 탭에서든 정답 화면이 열려 있다고 본다.
+ */
+export const REVEAL_HEARTBEAT_MS = 1000;
+export const REVEAL_FRESH_MS = 2500;
+
+/** 평가를 시작해도 되는지: 다른 탭 등에 정답 화면이 열려 있으면 안 됨 */
+export function canStartEvaluation(revealedAt: string | null, nowMs: number): boolean {
+  if (!revealedAt) return true;
+  return nowMs - Date.parse(revealedAt) > REVEAL_FRESH_MS;
+}
+
+/**
+ * 블라인드 위반: 정답 화면이 '마지막으로 열려 있던 시각'이 평가 시작 뒤(완료 전)면 위반.
+ * 정답 화면은 열려 있는 동안 계속 시각을 갱신하므로, 평가 전부터 열어 둔 화면도 평가 도중까지 열려 있었다면 잡힌다.
+ * 시작 직전(REVEAL_FRESH_MS 안)에 열려 있던 것도 위반으로 본다(엄격하게).
+ */
 export function isBlindBreach(session: Pick<VeSession, 'startedAt'>, revealedAt: string | null, completedAt: string): boolean {
   if (!revealedAt) return false;
   const t = Date.parse(revealedAt);
-  return t >= Date.parse(session.startedAt) && t <= Date.parse(completedAt);
+  return t >= Date.parse(session.startedAt) - REVEAL_FRESH_MS && t <= Date.parse(completedAt);
 }
 
 /** 판정에서 빼는 까닭(없으면 null) */

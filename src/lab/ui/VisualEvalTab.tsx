@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AquariumCanvas } from '../../ui/AquariumCanvas';
 import type { RenderOptions } from '../../render/AquariumRenderer';
 import {
-  autoMetrics, blindPair, compareRows, countedSessions, EMOTION_LABEL, exclusionReason, isBlindBreach, formatV1Report, GUESS_LABEL, newSession, PAIR_KIND_LABEL,
+  autoMetrics, blindPair, compareRows, countedSessions, EMOTION_LABEL, exclusionReason, isBlindBreach, canStartEvaluation, REVEAL_HEARTBEAT_MS, formatV1Report, GUESS_LABEL, newSession, PAIR_KIND_LABEL,
   parseSessions, runVisualSet, SAME_LABEL, v1Verdict, V1_CRITERIA, V1_VERDICT_LABEL, VE_DAYS,
   type EmotionGuess, type SameAnswer, type VeAnswer, type VeSession,
 } from '../visualEval';
@@ -27,7 +27,7 @@ function save(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 저장 못 해도 화면은 동작 */ }
 }
 
-type Mode = 'intro' | 'eval' | 'done' | 'results';
+type Mode = 'intro' | 'eval' | 'done' | 'results' | 'busy';
 
 export function VisualEvalTab() {
   const set = useMemo(() => runVisualSet(), []);
@@ -40,8 +40,29 @@ export function VisualEvalTab() {
 
   useEffect(() => save(KEY_CURRENT, current), [current]);
   useEffect(() => save(KEY_DONE, done), [done]);
+  const [blocked, setBlocked] = useState('');
+
+  // 다른 탭과 진행 상태를 맞춘다: 다른 탭에서 평가가 시작되면 이 탭의 정답 화면을 바로 닫는다
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === KEY_CURRENT) {
+        const next = load<VeSession | null>(KEY_CURRENT, null);
+        setCurrent(next);
+        // 다른 탭에서 평가가 시작되면 이 탭은 정답·평가 화면을 닫고 안내만 보여 준다(한 평가를 두 탭에서 고치지 않게)
+        setMode(next ? 'busy' : 'intro');
+      }
+      if (e.key === KEY_DONE) setDone(load<VeSession[]>(KEY_DONE, []));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const start = () => {
+    if (!canStartEvaluation(load<string | null>(KEY_REVEALED, null), Date.now())) {
+      setBlocked('다른 탭(또는 창)에 정답 화면이 열려 있어요. 그 화면을 닫은 뒤 몇 초 기다렸다가 다시 시작해 주세요.');
+      return;
+    }
+    setBlocked('');
     const seed = (crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now()) >>> 0;
     // 화면 시험이거나 자동화 브라우저면 판정에서 빼는 '테스트용'으로 저장
     const origin = trial || navigator.webdriver ? 'synthetic-test' : 'human';
@@ -73,7 +94,7 @@ export function VisualEvalTab() {
         <div className="row spread"><h2 style={{ margin: 0 }}>V1 감정별 어항 다양성 — 시각 평가</h2><OriginBadge origin="sample" /></div>
         <p>같은 책을 같은 속도로 읽어도, 기록한 감정에 따라 어항이 충분히 다르게 보이는지 사람 눈으로 확인해요. 어항은 모두 샘플 기록으로 만들었어요.</p>
         <div className="chips">
-          <button type="button" className={mode === 'intro' || mode === 'eval' || mode === 'done' ? 'chip on' : 'chip'} onClick={() => setMode(current ? 'eval' : last && mode === 'done' ? 'done' : 'intro')}>평가하기</button>
+          <button type="button" className={mode !== 'results' ? 'chip on' : 'chip'} disabled={mode === 'busy'} onClick={() => setMode(current ? 'eval' : last && mode === 'done' ? 'done' : 'intro')}>평가하기</button>
           <button type="button" className={mode === 'results' ? 'chip on' : 'chip'} disabled={!!current} onClick={() => setMode('results')}>결과 모으기·보기 (정답 공개)</button>
         </div>
         {current && <p className="hint">평가 중에는 정답 화면을 열 수 없어요. 끝내거나 "그만하기"를 눌러 주세요.</p>}
@@ -91,6 +112,15 @@ export function VisualEvalTab() {
           <label className="field">평가자 별칭(선택, 이름 대신 이니셜 등)<input value={evaluator} maxLength={40} onChange={(e) => setEvaluator(e.target.value)} /></label>
           <label className="check"><input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} /> 실제 평가가 아니라 화면 시험이에요(판정에서 빼기)</label>
           <button type="button" className="wide" onClick={start}>평가 시작</button>
+          {blocked && <p className="bad">{blocked}</p>}
+          <p className="hint">한 기기, 한 탭에서만 평가해 주세요. 평가 도중 어느 탭에서든 정답 화면이 열려 있었으면 그 평가는 판정에서 빠져요.</p>
+        </section>
+      )}
+
+      {mode === 'busy' && (
+        <section className="card">
+          <h3>다른 탭에서 평가가 진행 중이에요</h3>
+          <p>그 탭에서 이어서 해 주세요. 평가가 끝나면 이 탭에서도 결과를 볼 수 있어요.</p>
         </section>
       )}
 
@@ -200,8 +230,13 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
   const verdict = v1Verdict(all);
   const counted = countedSessions(all);
   const report = formatV1Report(set, all);
-  // 정답이 보이는 화면을 연 시각을 남긴다(이 기기에서 진행 중인 평가가 있으면 그 평가는 블라인드 위반이 됨)
-  useEffect(() => save(KEY_REVEALED, new Date().toISOString()), []);
+  // 정답이 보이는 동안 '마지막으로 열려 있던 시각'을 계속 남긴다(그동안 진행된 평가는 블라인드 위반이 됨)
+  useEffect(() => {
+    const beat = () => save(KEY_REVEALED, new Date().toISOString());
+    beat();
+    const id = window.setInterval(beat, REVEAL_HEARTBEAT_MS);
+    return () => { window.clearInterval(id); beat(); };
+  }, []);
 
   return (
     <>
