@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { AUTO, autoStart, autoStep, initialQuality, isSlow, loadDecision, loadPref, type AutoState } from '../autoQuality';
+import { AUTO, autoStart, autoStep, initialQuality, judgeFrames, loadDecision, loadPref, type AutoSample, type AutoState } from '../autoQuality';
 import { computeFrameStats } from '../frameStats';
 
 const fps = (f: number, n = Math.round((AUTO.windowMs / 1000) * f)) => computeFrameStats(Array(n).fill(1000 / f));
-const step = (s: AutoState, f: number, visible = true) => autoStep(s, { dtMs: 1000, stats: fps(f), visible });
+const W = AUTO.windowMs;
+const sample = (stats: AutoSample['stats'], over: Partial<AutoSample> = {}): AutoSample => ({ dtMs: 1000, stats, ready: true, visible: true, observedMs: W, ...over });
+const step = (s: AutoState, f: number) => autoStep(s, sample(fps(f)));
+const isSlow = (st: AutoSample['stats']) => judgeFrames(st, W) !== 'ok';
 const run = (s: AutoState, f: number, times: number) => {
   for (let i = 0; i < times; i++) s = step(s, f);
   return s;
@@ -26,8 +29,8 @@ describe('버거움 판정', () => {
     expect(isSlow(spiky)).toBe(true);
   });
 
-  it('프레임이 아예 없으면 판단하지 않고, 아주 적으면 버거움', () => {
-    expect(isSlow(computeFrameStats([]))).toBeNull();
+  it('준비된 뒤 프레임이 0개면 멈춤, 아주 적으면 버거움', () => {
+    expect(judgeFrames(computeFrameStats([]), W)).toBe('stall');
     expect(isSlow(fps(5))).toBe(true);
   });
 });
@@ -71,9 +74,56 @@ describe('자동 전환', () => {
   it('화면이 숨겨진 동안은 세지 않고 연속 기록도 끊는다', () => {
     let s = run(autoStart('normal'), 20, 4);
     expect(s.slowSteps).toBe(2);
-    s = autoStep(s, { dtMs: 1000, stats: fps(20), visible: false });
+    s = autoStep(s, sample(fps(20), { visible: false }));
     expect(s.slowSteps).toBe(0);
     expect(s.quality).toBe('normal');
+  });
+});
+
+describe('프레임 0개·멈춤 구분 (리뷰 반영)', () => {
+  const none = computeFrameStats([]);
+
+  it('렌더러가 준비된 뒤 어항 프레임이 0개로 이어지면 저사양으로 내린다', () => {
+    let s = autoStart('normal');
+    for (let i = 0; i < 4; i++) s = autoStep(s, sample(none));
+    expect(s.quality).toBe('normal');
+    s = autoStep(s, sample(none));
+    expect(s.quality).toBe('low');
+    expect(s.reason).toContain('멈추거나 끊겼어요');
+    expect(s.reason).toContain('그린 프레임 0개');
+  });
+
+  it('로딩 중(준비 전)에는 프레임이 없어도 판정하지 않고, 시간도 세지 않는다', () => {
+    let s = autoStart('normal');
+    for (let i = 0; i < 60; i++) s = autoStep(s, sample(none, { ready: false, observedMs: 0 }));
+    expect(s).toEqual(autoStart('normal'));
+  });
+
+  it('화면이 숨겨진 동안은 프레임이 없어도 내리지 않는다', () => {
+    let s = autoStart('normal');
+    for (let i = 0; i < 60; i++) s = autoStep(s, sample(none, { visible: false, observedMs: 0 }));
+    expect(s.quality).toBe('normal');
+  });
+
+  it('준비·화면 복귀 직후 1초 안에는 판정하지 않는다(그 전 프레임이 없어도 멈춤으로 보지 않음)', () => {
+    let s = run(autoStart('normal'), 60, 3);
+    for (let i = 0; i < 10; i++) s = autoStep(s, sample(none, { observedMs: 500 }));
+    expect(s.quality).toBe('normal');
+    expect(s.slowSteps).toBe(0);
+  });
+
+  it('1초 넘는 정지는 통계에서 빠지므로, 관찰 시간 대비 프레임이 덮은 시간이 절반 미만이면 멈춤', () => {
+    // 3초 중 1초만 60fps로 그리고 2초 멈춤 → 평균 FPS는 60처럼 보이지만 멈춤
+    const oneSecond = fps(60, 60);
+    expect(oneSecond.avgFps).toBeCloseTo(60, 0);
+    expect(judgeFrames(oneSecond, W)).toBe('stall');
+    // 관찰한 지 1초뿐이면 같은 프레임도 정상
+    expect(judgeFrames(oneSecond, 1000)).toBe('ok');
+  });
+
+  it('관찰 시간이 짧으면 최소 프레임 수도 비례해서 줄인다', () => {
+    expect(judgeFrames(fps(60, 60), 1000)).toBe('ok');
+    expect(judgeFrames(fps(5, 5), 1000)).toBe('slow');
   });
 });
 

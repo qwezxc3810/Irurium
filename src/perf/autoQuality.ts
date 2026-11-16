@@ -28,8 +28,12 @@ export const AUTO = {
   targetFps: 60,
   avgRatio: 0.8,
   lowRatio: 0.5,
-  /** 판정 구간에 이보다 프레임이 적으면(약 7fps 아래) 바로 버거움 */
+  /** 3초 판정 구간에 이보다 프레임이 적으면(약 7fps 아래) 바로 버거움(구간이 짧으면 비례해서 줄임) */
   minFrames: 20,
+  /** 관찰한 시간 중 프레임이 덮은 비율이 이보다 낮으면 '멈춤'(1초 넘는 정지는 통계에서 빠지므로 따로 본다) */
+  minCoverage: 0.5,
+  /** 화면 복귀·준비 직후 이만큼은 관찰해야 판정 */
+  minObservedMs: 1000,
   /** 자동 판정을 기억하는 기간 */
   rememberMs: 7 * 24 * 60 * 60 * 1000,
   /** 사양으로 처음부터 저사양을 고르는 기준(보조) */
@@ -39,12 +43,19 @@ export const AUTO = {
 
 export const PREF_LABEL: Record<QualityPref, string> = { auto: '자동', normal: '일반', low: '저사양' };
 
-/** null: 판단할 프레임이 없음(멈춤·숨김) */
-export function isSlow(stats: FrameStats): boolean | null {
-  if (stats.frames === 0) return null;
-  if (stats.frames < AUTO.minFrames) return true;
+export type FrameVerdict = 'ok' | 'slow' | 'stall';
+
+/**
+ * 렌더러가 준비됐고 화면이 보이는 동안 observedMs 만큼 관찰한 프레임으로 판정한다.
+ * - stall: 프레임이 0개이거나, 프레임이 덮은 시간이 관찰 시간의 절반 미만(1초 넘는 정지가 있었음)
+ * - slow: 프레임이 아주 적거나, 평균·1% 느린 프레임이 기준 아래
+ * 로딩 중·숨김은 여기 오기 전에 걸러진다(autoStep).
+ */
+export function judgeFrames(stats: FrameStats, observedMs: number): FrameVerdict {
+  if (stats.frames === 0 || stats.durationMs < observedMs * AUTO.minCoverage) return 'stall';
+  if (stats.frames < AUTO.minFrames * Math.min(1, observedMs / AUTO.windowMs)) return 'slow';
   const t = AUTO.targetFps;
-  return stats.avgFps < t * AUTO.avgRatio || stats.low1Fps < t * AUTO.lowRatio;
+  return stats.avgFps < t * AUTO.avgRatio || stats.low1Fps < t * AUTO.lowRatio ? 'slow' : 'ok';
 }
 
 export interface AutoState {
@@ -62,26 +73,36 @@ export function autoStart(quality: RenderQuality, reason: string | null = null):
 
 export interface AutoSample {
   dtMs: number;
+  /** 최근 관찰 구간(최대 3초)의 어항 프레임 통계 */
   stats: FrameStats;
+  /** 렌더러가 준비됐는지(로딩 중이면 false) */
+  ready: boolean;
   visible: boolean;
+  /** 준비·화면 복귀 이후 실제로 관찰한 시간(최대 3초). 이보다 오래된 프레임은 stats에 없다 */
+  observedMs: number;
 }
 
 /** 약 1초마다 부른다. 같은 입력이면 같은 결과(테스트 가능) */
 export function autoStep(s: AutoState, x: AutoSample): AutoState {
   if (s.quality === 'low') return s;
+  // 숨김: 세지 않고 연속 기록도 끊음. 로딩 중: 아직 판정하지 않음(시간도 세지 않음)
   if (!x.visible) return { ...s, slowSteps: 0 };
+  if (!x.ready) return s;
   const elapsedMs = s.elapsedMs + x.dtMs;
   if (elapsedMs <= AUTO.warmupMs) return { ...s, elapsedMs };
-  const slow = isSlow(x.stats);
-  if (slow === null) return { ...s, elapsedMs };
-  const slowSteps = slow ? s.slowSteps + 1 : 0;
+  if (x.observedMs < AUTO.minObservedMs) return { ...s, elapsedMs };
+  const verdict = judgeFrames(x.stats, x.observedMs);
+  const slowSteps = verdict === 'ok' ? 0 : s.slowSteps + 1;
   const startup = elapsedMs < AUTO.warmupMs + AUTO.startupMs;
   const need = startup ? AUTO.startupSlowSteps : AUTO.ongoingSlowSteps;
   if (slowSteps >= need) {
     const t = AUTO.targetFps;
+    const when = startup ? '시작할 때' : '쓰는 중에';
     return {
       quality: 'low', elapsedMs: 0, slowSteps: 0,
-      reason: `${startup ? '시작할 때' : '쓰는 중에'} 어항이 ${need}초 넘게 버거웠어요(평균 ${x.stats.avgFps.toFixed(0)}fps · 1% 느린 ${x.stats.low1Fps.toFixed(0)}fps, 목표 ${t}fps)`,
+      reason: verdict === 'stall'
+        ? `${when} 어항 그리기가 ${need}초 넘게 멈추거나 끊겼어요(최근 ${(x.observedMs / 1000).toFixed(0)}초에 그린 프레임 ${x.stats.frames}개)`
+        : `${when} 어항이 ${need}초 넘게 버거웠어요(평균 ${x.stats.avgFps.toFixed(0)}fps · 1% 느린 ${x.stats.low1Fps.toFixed(0)}fps, 목표 ${t}fps)`,
     };
   }
   return { ...s, elapsedMs, slowSteps };

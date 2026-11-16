@@ -33,21 +33,32 @@ export function useAutoQuality(canvas: RefObject<AquariumCanvasHandle | null>, p
   useEffect(() => {
     if (pref !== 'auto') return;
     let last = performance.now();
+    // 관찰 시작 시각: 렌더러가 준비된 때, 또는 화면이 다시 보인 때(그 전 프레임은 판정에 쓰지 않음)
+    let observeFrom: number | null = null;
     const onVis = () => {
-      if (document.visibilityState === 'hidden') canvas.current?.renderFrames()?.pause();
+      if (document.visibilityState === 'hidden') {
+        canvas.current?.renderFrames()?.pause();
+        observeFrom = null;
+      }
     };
     document.addEventListener('visibilitychange', onVis);
     const id = window.setInterval(() => {
       const now = performance.now();
       const dt = Math.min(2000, now - last);
       last = now;
-      const rec = canvas.current?.renderFrames();
-      if (!rec) return;
+      const rec = canvas.current?.renderFrames() ?? null;
+      const ready = !!rec && !!canvas.current?.renderInfo();
+      const visible = document.visibilityState !== 'hidden';
+      if (!ready || !visible) observeFrom = null;
+      else if (observeFrom === null) observeFrom = now;
+      const observedMs = observeFrom === null ? 0 : Math.min(AUTO.windowMs, now - observeFrom);
       const before = stateRef.current;
       const next = autoStep(before, {
         dtMs: dt,
-        stats: computeFrameStats(rec.recent(AUTO.windowMs, now)),
-        visible: document.visibilityState !== 'hidden',
+        stats: computeFrameStats(rec && observedMs > 0 ? rec.recent(observedMs, now) : []),
+        ready,
+        visible,
+        observedMs,
       });
       if (next !== before) setState(next);
       if (before.quality !== 'low' && next.quality === 'low' && next.reason) {
