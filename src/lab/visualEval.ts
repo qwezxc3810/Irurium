@@ -245,6 +245,8 @@ export interface VeSession {
   order: Array<{ pairId: string; swap: boolean }>;
   answers: VeAnswer[];
   userAgent: string;
+  /** 평가 도중(시작 뒤 끝나기 전) 정답 화면이 열린 적이 있으면 true. 블라인드 위반이라 판정에서 뺀다 */
+  blindBreach?: boolean;
 }
 
 export function newSession(evaluator: string, seed: number, now: Date, userAgent: string, origin: VeOrigin = 'human'): VeSession {
@@ -255,33 +257,88 @@ export function newSession(evaluator: string, seed: number, now: Date, userAgent
   };
 }
 
-/** 내보낸 JSON을 읽는다. 형식이 틀리면 이유와 함께 거부 */
+const SAME_VALUES: readonly SameAnswer[] = ['same', 'different', 'unsure'];
+const GUESS_VALUES: readonly EmotionGuess[] = ['warm', 'cool', 'swing', 'unsure'];
+
+/**
+ * 세션 하나의 형식·일관성 문제(없으면 빈 배열).
+ * - order: 21쌍을 빠짐없이 한 번씩, swap은 참·거짓
+ * - answers: order에 있는 쌍에 한 번씩, swap은 **실제로 보여 준 order의 swap과 같아야** 함, 응답 값은 허용값만
+ * - 완료 세션은 21쌍 모두 답해야 함
+ */
+export function sessionProblems(x: unknown): string[] {
+  const s = x as Partial<VeSession> | null;
+  if (!s || typeof s !== 'object') return ['세션이 객체가 아니에요'];
+  const errs: string[] = [];
+  if (s.schema !== VE_SCHEMA) return ['이 평가 도구의 결과 파일이 아니에요'];
+  if (s.origin !== 'human' && s.origin !== 'synthetic-test') errs.push('출처(origin)가 없어요');
+  if (typeof s.sessionId !== 'string' || !s.sessionId) errs.push('세션 id가 없어요');
+  if (typeof s.engineVersion !== 'string') errs.push('엔진 버전이 없어요');
+  if (typeof s.startedAt !== 'string') errs.push('시작 시각이 없어요');
+  if (s.completedAt !== null && typeof s.completedAt !== 'string') errs.push('완료 시각 형식이 틀려요');
+  if (!Array.isArray(s.order) || !Array.isArray(s.answers)) return [...errs, '순서(order)나 답(answers)이 배열이 아니에요'];
+  const known = new Set(vePairs().map((p) => p.id));
+  const shown = new Map<string, boolean>();
+  for (const o of s.order) {
+    if (!o || !known.has(o.pairId)) { errs.push(`순서에 모르는 쌍이 있어요(${o?.pairId})`); continue; }
+    if (typeof o.swap !== 'boolean') errs.push(`순서의 좌우(swap) 형식이 틀려요(${o.pairId})`);
+    if (shown.has(o.pairId)) errs.push(`순서에 같은 쌍이 두 번 있어요(${o.pairId})`);
+    shown.set(o.pairId, o.swap);
+  }
+  if (shown.size !== known.size) errs.push(`순서가 ${known.size}쌍을 모두 담고 있지 않아요(${shown.size}쌍)`);
+  const answered = new Set<string>();
+  for (const a of s.answers) {
+    if (!a || !shown.has(a.pairId)) { errs.push(`보여 주지 않은 쌍에 답했어요(${a?.pairId})`); continue; }
+    if (answered.has(a.pairId)) errs.push(`같은 쌍에 두 번 답했어요(${a.pairId})`);
+    answered.add(a.pairId);
+    if (a.swap !== shown.get(a.pairId)) errs.push(`답의 좌우(swap)가 실제로 보여 준 순서와 달라요(${a.pairId})`);
+    if (!SAME_VALUES.includes(a.same)) errs.push(`'같은 기록' 답이 허용값이 아니에요(${a.pairId})`);
+    if (!GUESS_VALUES.includes(a.emotionLeft) || !GUESS_VALUES.includes(a.emotionRight)) errs.push(`감정 답이 허용값이 아니에요(${a.pairId})`);
+    if (![1, 2, 3, 4, 5].includes(a.diff)) errs.push(`차이 점수가 1~5가 아니에요(${a.pairId})`);
+    if (a.note !== undefined && typeof a.note !== 'string') errs.push(`한마디 형식이 틀려요(${a.pairId})`);
+  }
+  if (s.completedAt && answered.size !== known.size) errs.push(`완료로 표시됐지만 ${answered.size}/${known.size}쌍만 답했어요`);
+  if (s.blindBreach !== undefined && typeof s.blindBreach !== 'boolean') errs.push('블라인드 위반 표시 형식이 틀려요');
+  return errs;
+}
+
+/** 내보낸 JSON을 읽는다. 형식·일관성이 틀린 세션이 하나라도 있으면 이유와 함께 거부 */
 export function parseSessions(text: string): VeSession[] {
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { throw new Error('JSON 형식이 아니에요'); }
   const list = Array.isArray(raw) ? raw : [raw];
-  const ids = new Set(vePairs().map((p) => p.id));
   return list.map((x, i) => {
-    const s = x as Partial<VeSession>;
-    if (s?.schema !== VE_SCHEMA) throw new Error(`${i + 1}번째: 이 평가 도구의 결과 파일이 아니에요`);
-    if (s.origin !== 'human' && s.origin !== 'synthetic-test') throw new Error(`${i + 1}번째: 출처(origin)가 없어요`);
-    if (!Array.isArray(s.answers) || !Array.isArray(s.order) || typeof s.sessionId !== 'string') throw new Error(`${i + 1}번째: 형식이 맞지 않아요`);
-    for (const a of s.answers) {
-      if (!ids.has(a.pairId)) throw new Error(`${i + 1}번째: 모르는 쌍(${a.pairId})`);
-      if (![1, 2, 3, 4, 5].includes(a.diff)) throw new Error(`${i + 1}번째: 차이 점수가 1~5가 아니에요`);
-    }
-    return s as VeSession;
+    const errs = sessionProblems(x);
+    if (errs.length) throw new Error(`${i + 1}번째: ${errs.slice(0, 3).join(' / ')}${errs.length > 3 ? ` 외 ${errs.length - 3}개` : ''}`);
+    return x as VeSession;
   });
 }
 
-/** 판정에 쓸 세션: 실제 사람 평가이고, 끝까지 답했고, 쌍 하나에 답이 하나씩 */
+/** 정답 화면을 연 시각이 이 세션 평가 도중(시작 뒤, 끝나기 전)이면 블라인드 위반 */
+export function isBlindBreach(session: Pick<VeSession, 'startedAt'>, revealedAt: string | null, completedAt: string): boolean {
+  if (!revealedAt) return false;
+  const t = Date.parse(revealedAt);
+  return t >= Date.parse(session.startedAt) && t <= Date.parse(completedAt);
+}
+
+/** 판정에서 빼는 까닭(없으면 null) */
+export function exclusionReason(s: VeSession): string | null {
+  if (sessionProblems(s).length) return '형식·일관성 오류';
+  if (s.origin !== 'human') return '테스트용(화면 시험·자동화)';
+  if (!s.completedAt) return '끝까지 답하지 않음';
+  if (s.blindBreach) return '블라인드 위반(평가 도중 정답 화면 열림)';
+  if (s.engineVersion !== ENGINE_VERSION) return `다른 엔진 버전(${s.engineVersion})으로 본 어항`;
+  return null;
+}
+
+/**
+ * 판정에 쓸 세션: 실제 사람 평가, 형식·일관성 정상, 끝까지 답함, 블라인드 유지, 지금 엔진 버전, 같은 세션은 한 번.
+ * 주의: 세는 단위는 '고유 세션'이다. 같은 사람이 여러 번 평가하면 여러 명으로 셀 수 있어서, 평가자 중복은 수집 절차에서 막는다.
+ */
 export function countedSessions(sessions: VeSession[]): VeSession[] {
-  const total = vePairs().length;
   const seen = new Set<string>();
   return sessions.filter((s) => {
-    if (s.origin !== 'human' || !s.completedAt || seen.has(s.sessionId)) return false;
-    const pairIds = new Set(s.answers.map((a) => a.pairId));
-    if (pairIds.size !== total || s.answers.length !== total) return false;
+    if (exclusionReason(s) || seen.has(s.sessionId)) return false;
     seen.add(s.sessionId);
     return true;
   });
@@ -306,6 +363,11 @@ function truthOf(set: { tanks: VeTank[] }, key: string): EmotionKind {
 export function humanSummary(sessions: VeSession[], tanks: VeTank[] = veTanks()): HumanCell[] {
   const counted = countedSessions(sessions);
   const pairs = new Map(vePairs().map((p) => [p.id, p]));
+  const shownSwap = new Map<VeAnswer, boolean>();
+  for (const s of counted) {
+    const order = new Map(s.order.map((o) => [o.pairId, o.swap]));
+    for (const a of s.answers) shownSwap.set(a, order.get(a.pairId)!);
+  }
   const cells: HumanCell[] = [];
   for (const kind of ['emotion', 'seed', 'control'] as PairKind[]) {
     for (const day of [...VE_DAYS, 'all'] as Array<VeDay | 'all'>) {
@@ -320,8 +382,10 @@ export function humanSummary(sessions: VeSession[], tanks: VeTank[] = veTanks())
       if (kind !== 'control') {
         for (const a of rows) {
           const p = pairs.get(a.pairId)!;
-          const leftKey = a.swap ? p.b : p.a;
-          const rightKey = a.swap ? p.a : p.b;
+          // 좌우는 답에 적힌 값이 아니라 실제로 보여 준 순서(order)로 정한다
+          const swap = shownSwap.get(a)!;
+          const leftKey = swap ? p.b : p.a;
+          const rightKey = swap ? p.a : p.b;
           emoTotal += 2;
           if (a.emotionLeft === truthOf({ tanks }, leftKey)) emoOk++;
           if (a.emotionRight === truthOf({ tanks }, rightKey)) emoOk++;
@@ -367,7 +431,7 @@ export function v1Verdict(sessions: VeSession[]): V1Result {
   if (counted.length < V1_CRITERIA.minEvaluators) {
     return {
       verdict: 'hold', evaluators: counted.length, excluded,
-      reasons: [`판정에 쓸 실제 사람 평가가 ${counted.length}명이에요(최소 ${V1_CRITERIA.minEvaluators}명). 자동 수치만으로는 통과시키지 않아요.`],
+      reasons: [`판정에 쓸 실제 사람 평가가 ${counted.length}개 세션이에요(최소 ${V1_CRITERIA.minEvaluators}개, 한 사람 한 번 기준). 자동 수치만으로는 통과시키지 않아요.`],
     };
   }
   const cell = (kind: PairKind) => humanSummary(counted).find((c) => c.kind === kind && c.day === 'all')!;

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AquariumCanvas } from '../../ui/AquariumCanvas';
 import type { RenderOptions } from '../../render/AquariumRenderer';
 import {
-  autoMetrics, blindPair, compareRows, countedSessions, EMOTION_LABEL, formatV1Report, GUESS_LABEL, newSession, PAIR_KIND_LABEL,
+  autoMetrics, blindPair, compareRows, countedSessions, EMOTION_LABEL, exclusionReason, isBlindBreach, formatV1Report, GUESS_LABEL, newSession, PAIR_KIND_LABEL,
   parseSessions, runVisualSet, SAME_LABEL, v1Verdict, V1_CRITERIA, V1_VERDICT_LABEL, VE_DAYS,
   type EmotionGuess, type SameAnswer, type VeAnswer, type VeSession,
 } from '../visualEval';
@@ -17,6 +17,8 @@ import { OriginBadge } from './components';
 const OPTIONS: RenderOptions = { mossStage: 0, reducedMotion: false };
 const KEY_DONE = 'irurium.visualEval.sessions';
 const KEY_CURRENT = 'irurium.visualEval.current';
+/** 정답 화면(결과 모으기·보기)을 마지막으로 연 시각. 평가 도중에 열렸으면 그 세션은 블라인드 위반 */
+const KEY_REVEALED = 'irurium.visualEval.revealedAt';
 
 function load<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
@@ -51,7 +53,10 @@ export function VisualEvalTab() {
     if (!current) return;
     const next = { ...current, answers: [...current.answers.filter((x) => x.pairId !== a.pairId), a] };
     if (next.answers.length >= next.order.length) {
-      setDone((d) => [...d, { ...next, completedAt: new Date().toISOString() }]);
+      const completedAt = new Date().toISOString();
+      // 다른 탭 등에서 평가 도중 정답 화면이 열렸으면 블라인드 위반으로 표시(판정 제외)
+      const blindBreach = isBlindBreach(next, load<string | null>(KEY_REVEALED, null), completedAt);
+      setDone((d) => [...d, { ...next, completedAt, ...(blindBreach ? { blindBreach } : {}) }]);
       setCurrent(null);
       setMode('done');
     } else {
@@ -69,8 +74,9 @@ export function VisualEvalTab() {
         <p>같은 책을 같은 속도로 읽어도, 기록한 감정에 따라 어항이 충분히 다르게 보이는지 사람 눈으로 확인해요. 어항은 모두 샘플 기록으로 만들었어요.</p>
         <div className="chips">
           <button type="button" className={mode === 'intro' || mode === 'eval' || mode === 'done' ? 'chip on' : 'chip'} onClick={() => setMode(current ? 'eval' : last && mode === 'done' ? 'done' : 'intro')}>평가하기</button>
-          <button type="button" className={mode === 'results' ? 'chip on' : 'chip'} onClick={() => setMode('results')}>결과 모으기·보기 (정답 공개)</button>
+          <button type="button" className={mode === 'results' ? 'chip on' : 'chip'} disabled={!!current} onClick={() => setMode('results')}>결과 모으기·보기 (정답 공개)</button>
         </div>
+        {current && <p className="hint">평가 중에는 정답 화면을 열 수 없어요. 끝내거나 "그만하기"를 눌러 주세요.</p>}
       </section>
 
       {mode === 'intro' && (
@@ -148,6 +154,7 @@ function DoneView({ set, session }: { set: ReturnType<typeof runVisualSet>; sess
     <section className="card">
       <h3>수고하셨어요! 정답 공개</h3>
       {session.origin !== 'human' && <p className="bad">이 결과는 화면 시험(테스트용)으로 저장돼서 판정에 쓰지 않아요.</p>}
+      {session.blindBreach && <p className="bad">평가 도중 정답 화면이 열려서 이 결과는 판정에 쓰지 않아요(블라인드 위반).</p>}
       <p>아래 "결과 복사"를 눌러 기획자에게 보내 주세요. 이 기기에도 저장돼 있어요.</p>
       <div className="row">
         <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied('복사했어요'); } catch { setCopied('자동 복사가 막혔어요. 아래 글상자에서 직접 복사해 주세요'); } }}>결과 복사</button>
@@ -193,14 +200,17 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
   const verdict = v1Verdict(all);
   const counted = countedSessions(all);
   const report = formatV1Report(set, all);
+  // 정답이 보이는 화면을 연 시각을 남긴다(이 기기에서 진행 중인 평가가 있으면 그 평가는 블라인드 위반이 됨)
+  useEffect(() => save(KEY_REVEALED, new Date().toISOString()), []);
 
   return (
     <>
       <section className="card">
         <h3>판정: {V1_VERDICT_LABEL[verdict.verdict]}</h3>
         <ul>{verdict.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-        <p className="hint">판정에는 <b>실제 사람 평가</b>(끝까지 답한 세션, 같은 세션은 한 번)만 써요. 자동 수치는 비교용이고 판정에 넣지 않아요. 기준은 초안이에요(최소 {V1_CRITERIA.minEvaluators}명, 감정 쌍 '다른 기록' {Math.round(V1_CRITERIA.emotionDifferentRate * 100)}% 이상, 차이 점수 감정−시드 {V1_CRITERIA.diffGap} 이상, 감정 맞히기 {Math.round(V1_CRITERIA.emotionGuessRate * 100)}% 이상).</p>
-        <p>이 기기 평가 {done.length}개 · 가져온 평가 {imported.length}개 · 판정에 쓴 실제 사람 평가 {counted.length}명</p>
+        <p className="hint">판정에는 <b>실제 사람 평가</b>(형식·좌우가 맞고, 끝까지 답했고, 평가 도중 정답 화면을 열지 않았고, 지금 엔진 버전인 세션, 같은 세션은 한 번)만 써요. 자동 수치는 비교용이고 판정에 넣지 않아요. 기준은 초안이에요(최소 {V1_CRITERIA.minEvaluators}명, 감정 쌍 '다른 기록' {Math.round(V1_CRITERIA.emotionDifferentRate * 100)}% 이상, 차이 점수 감정−시드 {V1_CRITERIA.diffGap} 이상, 감정 맞히기 {Math.round(V1_CRITERIA.emotionGuessRate * 100)}% 이상).</p>
+        <p>이 기기 평가 {done.length}개 · 가져온 평가 {imported.length}개 · 판정에 쓴 실제 사람 평가 {counted.length}개 세션</p>
+        <p className="hint">세는 단위는 '고유 세션'이에요. 같은 사람이 여러 번 평가하면 여러 명으로 셀 수 있으니, 한 사람에게 한 번만 받아 주세요.</p>
       </section>
 
       <section className="card">
@@ -247,7 +257,8 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
               {all.map((s) => (
                 <tr key={s.sessionId + s.startedAt}>
                   <td>{s.sessionId}</td><td>{s.evaluator || '-'}</td><td>{s.origin === 'human' ? '사람' : '테스트용(판정 제외)'}</td>
-                  <td>{s.answers.length}/{s.order.length}</td><td>{counted.some((c) => c.sessionId === s.sessionId) ? '✓' : '—'}</td>
+                  <td>{s.answers.length}/{s.order.length}</td>
+                  <td>{counted.some((c) => c.sessionId === s.sessionId) ? '✓' : `— ${exclusionReason(s) ?? '같은 세션 중복'}`}</td>
                 </tr>
               ))}
             </tbody>

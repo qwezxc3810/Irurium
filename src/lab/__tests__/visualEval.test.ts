@@ -5,7 +5,8 @@ import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios'
 import { TankSession } from '../../engine/session';
 import manifest from '../../../public/assets/manifest.json';
 import {
-  autoDistinct, autoMetrics, blindPair, chipsFor, compareRows, countedSessions, formatV1Report, humanSummary, newSession,
+  autoDistinct, autoMetrics, blindPair, chipsFor, compareRows, countedSessions, exclusionReason, formatV1Report, humanSummary, isBlindBreach, newSession,
+  sessionProblems,
   parseSessions, runVisualSet, shuffleOrder, v1Verdict, V1_CRITERIA, VE_DAYS, vePairs, veTanks,
   type VeAnswer, type VeSession,
 } from '../visualEval';
@@ -168,5 +169,61 @@ describe('결과 저장·가져오기', () => {
     expect(t).toContain('## 자동 수치 (엔진 상태 기반, 샘플 기록)');
     expect(t).toContain('## 사람 평가 (실제 평가 0명)');
     expect(t).toContain('## 판정: 보류(사람 평가 부족)');
+  });
+});
+
+describe('세션 일관성 검사 (리뷰 반영)', () => {
+  const good = () => JSON.parse(JSON.stringify(fakeSession('a', 'human', perfect))) as VeSession;
+  const bad = (fn: (s: VeSession) => void) => { const s = good(); fn(s); return s; };
+
+  it('정상 세션은 문제 없음', () => {
+    expect(sessionProblems(good())).toEqual([]);
+    expect(exclusionReason(good())).toBeNull();
+  });
+
+  it("답의 좌우(swap)가 실제로 보여 준 순서와 다르면 거부·집계 제외", () => {
+    const s = bad((x) => { x.answers[0]!.swap = !x.answers[0]!.swap; });
+    expect(sessionProblems(s).some((e) => e.includes('실제로 보여 준 순서와 달라요'))).toBe(true);
+    expect(() => parseSessions(JSON.stringify(s))).toThrow('보여 준 순서');
+    expect(countedSessions([s])).toEqual([]);
+  });
+
+  it('채점은 답에 적힌 swap이 아니라 실제로 보여 준 순서로 한다', () => {
+    // 일관성 검사를 거치지 않고 직접 넘겨도, 정상 세션의 채점은 order 기준이라 바뀌지 않는다
+    const ss = ['a', 'bb', 'ccc', 'dddd', 'eeeee'].map((id) => fakeSession(id, 'human', perfect));
+    const before = humanSummary(ss).find((c) => c.kind === 'emotion' && c.day === 'all')!.emotionCorrect;
+    expect(before).toBe(1);
+  });
+
+  it('순서(order)가 21쌍이 아니거나, 같은 쌍이 두 번이거나, 모르는 쌍이면 거부', () => {
+    expect(sessionProblems(bad((x) => { x.order.pop(); })).join()).toContain('모두 담고 있지 않아요');
+    expect(sessionProblems(bad((x) => { x.order[1] = { ...x.order[0]! }; })).join()).toContain('같은 쌍이 두 번');
+    expect(sessionProblems(bad((x) => { x.order[0]!.pairId = 'd1:X|Y'; })).join()).toContain('모르는 쌍');
+    expect(sessionProblems(bad((x) => { (x.order[0] as { swap: unknown }).swap = 'yes'; })).join()).toContain('swap) 형식');
+  });
+
+  it('응답 값이 허용값이 아니거나, 같은 쌍에 두 번 답하거나, 완료인데 덜 답했으면 거부', () => {
+    expect(sessionProblems(bad((x) => { (x.answers[0] as { same: string }).same = 'maybe'; })).join()).toContain("'같은 기록' 답");
+    expect(sessionProblems(bad((x) => { (x.answers[0] as { emotionLeft: string }).emotionLeft = 'happy'; })).join()).toContain('감정 답');
+    expect(sessionProblems(bad((x) => { x.answers[1] = { ...x.answers[0]! }; })).join()).toContain('두 번 답했어요');
+    expect(sessionProblems(bad((x) => { x.answers.pop(); })).join()).toContain('완료로 표시됐지만');
+  });
+
+  it('다른 엔진 버전으로 본 어항의 평가는 가져오되 판정에서 뺀다', () => {
+    const s = bad((x) => { x.engineVersion = '0.1.0'; });
+    expect(parseSessions(JSON.stringify(s)).length).toBe(1);
+    expect(exclusionReason(s)).toContain('다른 엔진 버전');
+    expect(countedSessions([s])).toEqual([]);
+  });
+
+  it('블라인드 위반: 평가 도중 정답 화면을 연 세션은 판정에서 뺀다', () => {
+    const s = good();
+    expect(isBlindBreach(s, null, '2026-11-16T01:00:00.000Z')).toBe(false);
+    expect(isBlindBreach(s, '2026-11-15T23:00:00.000Z', '2026-11-16T01:00:00.000Z')).toBe(false); // 시작 전에 연 것
+    expect(isBlindBreach(s, '2026-11-16T00:30:00.000Z', '2026-11-16T01:00:00.000Z')).toBe(true); // 도중에 연 것
+    const breached = { ...s, blindBreach: true };
+    expect(exclusionReason(breached)).toContain('블라인드 위반');
+    const five = ['a', 'bb', 'ccc', 'dddd', 'eeeee'].map((id) => ({ ...fakeSession(id, 'human', perfect), blindBreach: true }));
+    expect(v1Verdict(five).verdict).toBe('hold');
   });
 });
