@@ -109,21 +109,28 @@ describe('이전 엔진(0.1.0) 기록 보호', () => {
     return verifyUserData(parseUserData(JSON.stringify(t))).problems;
   };
 
-  it('기준(baseId)을 없는 값으로 바꾸면 버전과 관계없이 잡아낸다(I4)', () => {
+  it('기준(baseId)을 없는 값으로 바꾸면 버전과 관계없이 잡아낸다(I5)', () => {
     const p = tampered((t) => { t.snapshots[5]!.baseId = 's-none'; });
-    expect(p.some((x) => x.includes('기준 스냅샷 없음') && x.includes('I4')), p.join(' / ')).toBe(true);
+    expect(p.some((x) => x.includes('기준 스냅샷 없음') && x.includes('I5')), p.join(' / ')).toBe(true);
   });
 
-  it('중간이 끊긴 기준 체인은 그 뒤 스냅샷들까지 잡아낸다(I4)', () => {
+  it('중간이 끊긴 기준 체인은 그 뒤 스냅샷들까지 잡아낸다(I5)', () => {
     const p = tampered((t) => { t.snapshots = t.snapshots.filter((s) => s.id !== 's3-r1'); });
-    expect(p.filter((x) => x.includes('I4')).length).toBeGreaterThan(1);
+    expect(p.filter((x) => x.includes('I5')).length).toBeGreaterThan(1);
   });
 
-  it('순환하는 기준 체인과 맞지 않는 순번을 잡아낸다(I4)', () => {
+  it('순환하는 기준 체인과 맞지 않는 순번을 잡아낸다(I5)', () => {
     const cyc = tampered((t) => { t.snapshots[1]!.baseId = t.snapshots[4]!.id; });
-    expect(cyc.some((x) => x.includes('I4')), cyc.join(' / ')).toBe(true);
+    expect(cyc.some((x) => x.includes('I5')), cyc.join(' / ')).toBe(true);
     const genesis = tampered((t) => { t.snapshots[0]!.baseId = t.snapshots[2]!.id; });
-    expect(genesis.some((x) => x.includes('I4'))).toBe(true);
+    expect(genesis.some((x) => x.includes('I5'))).toBe(true);
+  });
+
+  it('0.1.0 스냅샷의 입력이나 엔진 버전 표시만 바꿔도 잡아낸다(I6, 다시 계산 없이)', () => {
+    const inp = tampered((t) => { t.snapshots[4]!.input!.amount += 5; });
+    expect(inp.some((x) => x.includes('I6')), inp.join(' / ')).toBe(true);
+    const ver = tampered((t) => { t.snapshots[4]!.engineVersion = '0.2.0'; });
+    expect(ver.some((x) => x.includes('I6')), ver.join(' / ')).toBe(true);
   });
 
   it('머리(headId)가 없는 스냅샷을 가리키면 가져오기부터 거부한다', () => {

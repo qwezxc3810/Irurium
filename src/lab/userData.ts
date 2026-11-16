@@ -1,4 +1,5 @@
 import { computeFinale, computeSnapshot } from '../engine/compute';
+import { expectedInputHash } from '../engine/session';
 import { ENGINE_VERSION } from '../engine/config';
 import { addDays, daysBetween } from '../engine/dates';
 import { computeMoss } from '../engine/moss';
@@ -62,7 +63,7 @@ const contentHashOf = (s: Pick<Snapshot, 'state' | 'ledger' | 'changes'>) => has
 export interface IntegrityReport {
   checked: number;
   problems: string[];
-  /** 다른 엔진 버전으로 만든 스냅샷 수. 지금 엔진으로 다시 계산하면 달라지는 게 정상이라 I2(재계산)는 건너뛰고 I3(내용 해시)만 본다 */
+  /** 다른 엔진 버전으로 만든 스냅샷 수. 지금 엔진으로 다시 계산하면 달라지는 게 정상이라 I2(재계산)는 건너뛰고 I3(내용 해시)·I5(체인)·I6(입력 해시)만 본다 */
   otherVersion: number;
   versions: string[];
   fingerprint: string;
@@ -71,19 +72,22 @@ export interface IntegrityReport {
 /**
  * 읽기만 한다. 검사 범위:
  * - I3 내용 해시: 상태·원장·변화 문구(state·ledger·changes)가 만든 뒤 바뀌지 않았는지. 연결 정보(baseId·seq·input)는 이 해시에 들어 있지 않다.
- * - I4 기준 체인: 버전과 관계없이 모든 스냅샷의 기준(baseId)이 있고, 순번이 맞고, 순환 없이 시작 스냅샷까지 이어지는지. 머리(headId)가 있는지.
+ * - I5 기준 체인: 버전과 관계없이 모든 스냅샷의 기준(baseId)이 있고, 순번이 맞고, 순환 없이 시작 스냅샷까지 이어지는지. 머리(headId)가 있는지.
+ * - I6 입력 해시 체인: 버전과 관계없이 기준의 입력 해시 + 이 스냅샷의 입력 + 엔진 버전으로 다시 만든 해시가 같은지.
+ *   그래서 다른 버전 스냅샷의 입력(input)이나 엔진 버전 표시만 바꾼 경우도 잡는다.
  * - I2 다시 계산: 지금 엔진 버전으로 만든 스냅샷만. 다른 버전은 저장된 결과가 정답이라 건너뛴다.
- *   그래서 다른 버전 스냅샷의 입력(input)만 바꾼 경우는 잡지 못한다(화면에 범위를 함께 표시).
+ *   그래서 다른 버전 스냅샷의 상태와 내용 해시를 함께 고쳐 쓴 경우는 잡지 못한다(엔진 구현의 SessionData 검사와 같음).
  */
 export function verifyUserData(d: Readonly<SessionData>): IntegrityReport {
   const byId = new Map(d.snapshots.map((s) => [s.id, s]));
   const problems: string[] = [];
   let otherVersion = 0;
-  if (!byId.has(d.headId)) problems.push(`머리 스냅샷 없음: ${d.headId}(I4)`);
+  if (!byId.has(d.headId)) problems.push(`머리 스냅샷 없음: ${d.headId}(I5)`);
   for (const s of d.snapshots) {
     if (contentHashOf(s) !== s.contentHash) problems.push(`${s.id}: 저장된 내용이 만든 뒤 바뀜(I3)`);
     const chain = chainProblem(s, byId);
-    if (chain) { problems.push(`${s.id}: ${chain}(I4)`); continue; }
+    if (chain) { problems.push(`${s.id}: ${chain}(I5)`); continue; }
+    if (expectedInputHash(s, s.baseId ? byId.get(s.baseId)! : null) !== s.inputHash) problems.push(`${s.id}: 입력 해시가 맞지 않음 — 입력·기준·엔진 버전이 바뀜(I6)`);
     if (!s.baseId) continue;
     // 그 전 엔진으로 만든 스냅샷은 저장된 결과가 정답이다. 지금 엔진으로 다시 계산해 비교(I2)만 하지 않는다.
     if (s.engineVersion !== ENGINE_VERSION) { otherVersion++; continue; }
@@ -96,7 +100,7 @@ export function verifyUserData(d: Readonly<SessionData>): IntegrityReport {
   return { checked: d.snapshots.length, problems, otherVersion, versions, fingerprint: fingerprintOf(d) };
 }
 
-/** I4: 이 스냅샷에서 기준을 따라가면 순환 없이 시작 스냅샷(genesis)에 닿는지, 각 단계 순번이 맞는지 */
+/** I5: 이 스냅샷에서 기준을 따라가면 순환 없이 시작 스냅샷(genesis)에 닿는지, 각 단계 순번이 맞는지 */
 function chainProblem(s: Snapshot, byId: Map<string, Snapshot>): string | null {
   if (!s.baseId) return s.kind === 'genesis' ? null : '기준(baseId)이 비어 있음';
   if (s.kind === 'genesis') return '시작 스냅샷에 기준이 있음';
