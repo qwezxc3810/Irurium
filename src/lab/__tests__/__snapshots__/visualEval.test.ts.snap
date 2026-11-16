@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`평가 어항: 한 가지만 다르게 > 엔진·그래픽은 그대로(엔진 0.2.0, 골든 해시, 그래픽 목록) 1`] = `
+[
+  "fish.bluefin",
+  "fish.foxfish",
+  "fish.goldfish",
+  "fish.medaka",
+  "plant.foxtail",
+  "plant.leafy",
+  "plant.stem",
+  "rock.round",
+  "rock.sharp",
+  "symbol.rose-coral",
+  "symbol.sand-lantern",
+]
+`;
