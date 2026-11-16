@@ -10,6 +10,7 @@ import type { TankState } from '../../engine/types';
 import { FISH_BAND_TARGET, occlusionRows } from '../occlusion';
 import { runSuite } from '../runner';
 import { parseUserData, userRun, verifyUserData } from '../userData';
+import { structureProblems } from '../../engine/session';
 import fixture from './fixtures/session-0.1.0.json';
 
 /**
@@ -111,12 +112,33 @@ describe('이전 엔진(0.1.0) 기록 보호', () => {
 
   it('기준(baseId)을 없는 값으로 바꾸면 버전과 관계없이 잡아낸다(I5)', () => {
     const p = tampered((t) => { t.snapshots[5]!.baseId = 's-none'; });
-    expect(p.some((x) => x.includes('기준 스냅샷 없음') && x.includes('I5')), p.join(' / ')).toBe(true);
+    expect(p.some((x) => /I5: .*기준 스냅샷.*없음/.test(x)), p.join(' / ')).toBe(true);
+    expect(p.some((x) => x.includes('입력 해시(I6)·다시 계산(I2)은 하지 않았어요'))).toBe(true);
   });
 
-  it('중간이 끊긴 기준 체인은 그 뒤 스냅샷들까지 잡아낸다(I5)', () => {
+  it('중간 스냅샷이 빠져 끊긴 기준 체인을 잡아낸다(I5)', () => {
     const p = tampered((t) => { t.snapshots = t.snapshots.filter((s) => s.id !== 's3-r1'); });
-    expect(p.filter((x) => x.includes('I5')).length).toBeGreaterThan(1);
+    expect(p.some((x) => /I5: s4-r1의 기준 스냅샷\(s3-r1\)이 없음/.test(x)), p.join(' / ')).toBe(true);
+  });
+
+  it('엔진 I5와 같은 범위: 갈래(fork)·스냅샷 id 중복·같은 clientId 두 번·기록 순번 오류를 잡는다', () => {
+    const fork = tampered((t) => { t.snapshots.push({ ...t.snapshots[5]!, id: 's6-fork' }); });
+    expect(fork.some((x) => x.includes('I5: 머리에서 이어지지 않은')), fork.join(' / ')).toBe(true);
+    const dupId = tampered((t) => { t.snapshots.push(t.snapshots[3]!); });
+    expect(dupId.some((x) => x.includes('I5: 스냅샷 id가 겹침')), dupId.join(' / ')).toBe(true);
+    const dupClient = tampered((t) => { t.entries[4]!.clientId = t.entries[3]!.clientId; });
+    expect(dupClient.some((x) => x.includes('I5: 같은 기록이 두 번')), dupClient.join(' / ')).toBe(true);
+    const seq = tampered((t) => { t.entries[2]!.seq = 9; });
+    expect(seq.some((x) => x.includes('I5: 기록 순번')), seq.join(' / ')).toBe(true);
+  });
+
+  it('검증실과 엔진의 구조 검사 결과가 같다', () => {
+    const t = JSON.parse(raw) as SessionData;
+    t.snapshots.push({ ...t.snapshots[5]!, id: 's6-fork' });
+    t.entries[4]!.clientId = t.entries[3]!.clientId;
+    const lab = verifyUserData(parseUserData(JSON.stringify(t))).problems.filter((x) => x.startsWith('I5'));
+    expect(lab).toEqual(structureProblems(t));
+    expect(lab.length).toBeGreaterThan(0);
   });
 
   it('순환하는 기준 체인과 맞지 않는 순번을 잡아낸다(I5)', () => {

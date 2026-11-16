@@ -1,5 +1,5 @@
 import { computeFinale, computeSnapshot } from '../engine/compute';
-import { expectedInputHash } from '../engine/session';
+import { expectedInputHash, structureProblems } from '../engine/session';
 import { ENGINE_VERSION } from '../engine/config';
 import { addDays, daysBetween } from '../engine/dates';
 import { computeMoss } from '../engine/moss';
@@ -70,52 +70,39 @@ export interface IntegrityReport {
 }
 
 /**
- * 읽기만 한다. 검사 범위:
+ * 읽기만 한다. 검사 범위(엔진 TankSession.checkInvariants와 같은 기준):
  * - I3 내용 해시: 상태·원장·변화 문구(state·ledger·changes)가 만든 뒤 바뀌지 않았는지. 연결 정보(baseId·seq·input)는 이 해시에 들어 있지 않다.
- * - I5 기준 체인: 버전과 관계없이 모든 스냅샷의 기준(baseId)이 있고, 순번이 맞고, 순환 없이 시작 스냅샷까지 이어지는지. 머리(headId)가 있는지.
+ * - I5 기록 체인 구조: 엔진과 같은 structureProblems()를 쓴다. 머리→시작 한 줄(갈래·고아·순환 없음), 기준 순번,
+ *   스냅샷·기록 id 중복, 같은 clientId 두 번, 기록 순번, 스냅샷↔기록 연결. 버전과 관계없이 확인한다.
  * - I6 입력 해시 체인: 버전과 관계없이 기준의 입력 해시 + 이 스냅샷의 입력 + 엔진 버전으로 다시 만든 해시가 같은지.
- *   그래서 다른 버전 스냅샷의 입력(input)이나 엔진 버전 표시만 바꾼 경우도 잡는다.
  * - I2 다시 계산: 지금 엔진 버전으로 만든 스냅샷만. 다른 버전은 저장된 결과가 정답이라 건너뛴다.
- *   그래서 다른 버전 스냅샷의 상태와 내용 해시를 함께 고쳐 쓴 경우는 잡지 못한다(엔진 구현의 SessionData 검사와 같음).
+ *   그래서 다른 버전 스냅샷의 상태와 내용 해시를 함께 고쳐 쓴 경우는 잡지 못한다.
+ * 구조(I5)가 깨졌으면 기준을 믿을 수 없어서 I6·I2는 하지 않고 그렇다고 적는다(I3는 스냅샷마다 따로 확인).
  */
 export function verifyUserData(d: Readonly<SessionData>): IntegrityReport {
-  const byId = new Map(d.snapshots.map((s) => [s.id, s]));
-  const problems: string[] = [];
+  const problems: string[] = [...structureProblems(d)];
+  const structureOk = problems.length === 0;
   let otherVersion = 0;
-  if (!byId.has(d.headId)) problems.push(`머리 스냅샷 없음: ${d.headId}(I5)`);
   for (const s of d.snapshots) {
     if (contentHashOf(s) !== s.contentHash) problems.push(`${s.id}: 저장된 내용이 만든 뒤 바뀜(I3)`);
-    const chain = chainProblem(s, byId);
-    if (chain) { problems.push(`${s.id}: ${chain}(I5)`); continue; }
-    if (expectedInputHash(s, s.baseId ? byId.get(s.baseId)! : null) !== s.inputHash) problems.push(`${s.id}: 입력 해시가 맞지 않음 — 입력·기준·엔진 버전이 바뀜(I6)`);
-    if (!s.baseId) continue;
-    // 그 전 엔진으로 만든 스냅샷은 저장된 결과가 정답이다. 지금 엔진으로 다시 계산해 비교(I2)만 하지 않는다.
-    if (s.engineVersion !== ENGINE_VERSION) { otherVersion++; continue; }
-    const base = byId.get(s.baseId)!;
-    const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq) : s.input ? computeSnapshot(base, s.input, s.cfg) : null;
-    if (!again) problems.push(`${s.id}: 계산 입력 없음`);
-    else if (contentHashOf(again) !== s.contentHash) problems.push(`${s.id}: 다시 계산하면 결과가 다름(I2)`);
+    if (s.baseId && s.engineVersion !== ENGINE_VERSION) otherVersion++;
+  }
+  if (!structureOk) {
+    problems.push('기록 체인 구조(I5)가 깨져서 입력 해시(I6)·다시 계산(I2)은 하지 않았어요');
+  } else {
+    const byId = new Map(d.snapshots.map((s) => [s.id, s]));
+    for (const s of d.snapshots) {
+      const base = s.baseId ? byId.get(s.baseId)! : null;
+      if (expectedInputHash(s, base) !== s.inputHash) problems.push(`${s.id}: 입력 해시가 맞지 않음 — 입력·기준·엔진 버전이 바뀜(I6)`);
+      // 그 전 엔진으로 만든 스냅샷은 저장된 결과가 정답이다. 지금 엔진으로 다시 계산해 비교(I2)만 하지 않는다.
+      if (!base || s.engineVersion !== ENGINE_VERSION) continue;
+      const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq) : s.input ? computeSnapshot(base, s.input, s.cfg) : null;
+      if (!again) problems.push(`${s.id}: 계산 입력 없음`);
+      else if (contentHashOf(again) !== s.contentHash) problems.push(`${s.id}: 다시 계산하면 결과가 다름(I2)`);
+    }
   }
   const versions = [...new Set(d.snapshots.map((s) => s.engineVersion))].sort();
   return { checked: d.snapshots.length, problems, otherVersion, versions, fingerprint: fingerprintOf(d) };
-}
-
-/** I5: 이 스냅샷에서 기준을 따라가면 순환 없이 시작 스냅샷(genesis)에 닿는지, 각 단계 순번이 맞는지 */
-function chainProblem(s: Snapshot, byId: Map<string, Snapshot>): string | null {
-  if (!s.baseId) return s.kind === 'genesis' ? null : '기준(baseId)이 비어 있음';
-  if (s.kind === 'genesis') return '시작 스냅샷에 기준이 있음';
-  const seen = new Set<string>([s.id]);
-  let cur: Snapshot = s;
-  while (cur.baseId) {
-    const base = byId.get(cur.baseId);
-    if (!base) return cur === s ? '기준 스냅샷 없음' : `기준 체인이 끊김(${cur.id} → ${cur.baseId})`;
-    const seqOk = cur.kind === 'finale' ? base.seq === cur.seq : base.seq < cur.seq;
-    if (!seqOk) return `기준 순번이 맞지 않음(${cur.id} #${cur.seq} → ${base.id} #${base.seq})`;
-    if (seen.has(base.id)) return '기준 체인이 순환함';
-    seen.add(base.id);
-    cur = base;
-  }
-  return cur.kind === 'genesis' ? null : '기준 체인이 시작 스냅샷에 닿지 않음';
 }
 
 export function fingerprintOf(d: Readonly<SessionData>): string {

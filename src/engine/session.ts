@@ -341,6 +341,7 @@ export class TankSession {
    * 저장한 세션을 불러온다(앱을 다시 열 때). 저장된 스냅샷은 **다시 계산하지 않고 그대로** 쓴다.
    * 그 전 엔진 버전으로 만든 스냅샷도 그대로 두고, 새 기록부터 지금 엔진으로 계산한다.
    * 구조(I5)·입력 해시(I6)·내용 해시(I3)·미확정(I1)·날짜(I4)가 맞지 않으면 불러오지 않는다(session_invalid).
+   * 불러올 때는 다시 계산(I2)을 하지 않는다(기록 수에 비례해 느려서). I2까지 보려면 불러온 뒤 checkInvariants({ deep: true }).
    */
   static fromJSON(data: SessionData): TankSession {
     if (!data || typeof data !== 'object' || !Array.isArray(data.snapshots) || !Array.isArray(data.entries)
