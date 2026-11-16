@@ -71,6 +71,8 @@ export function guessBrowser(ua: string): string {
   const major = (re: RegExp) => ua.match(re)?.[1]?.split('.')[0];
   if (/KAKAOTALK/i.test(ua)) return '카카오톡 인앱';
   if (/NAVER\(inapp|\bNAVER\b/.test(ua)) return '네이버 앱';
+  // 안드로이드 웹뷰(앱 안 브라우저). 'Version/4.0 Chrome/…'이 붙어 있어 크롬으로 잘못 보이기 쉽다
+  if (/; wv\)/.test(ua)) return /\bClaude\//.test(ua) ? 'Claude 앱 웹뷰' : '안드로이드 웹뷰(앱 안 브라우저)';
   const rules: Array<[RegExp, string]> = [
     [/SamsungBrowser\/([\d.]+)/, '삼성 인터넷'],
     [/CriOS\/([\d.]+)/, '크롬(iOS)'],

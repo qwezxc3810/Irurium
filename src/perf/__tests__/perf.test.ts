@@ -99,6 +99,10 @@ describe('측정 환경: 실제 휴대폰과 시뮬레이션 구분', () => {
     expect(guessBrowser('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0 Mobile Safari/537.36')).toBe('삼성 인터넷 27');
     expect(guessBrowser(ANDROID + ' KAKAOTALK 10.8.0')).toBe('카카오톡 인앱');
     expect(guessBrowser('unknown')).toBe('');
+    // 실측(2026-11-16, 갤럭시 Z 폴드7)에서 '크롬 157'로 잘못 채워졌던 브라우저 정보
+    const claudeWv = 'Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/157.0.0.0 Mobile Safari/537.36 Claude/1.261113.19';
+    expect(guessBrowser(claudeWv)).toBe('Claude 앱 웹뷰');
+    expect(guessBrowser(claudeWv.replace(/ Claude\/[\d.]+/, ''))).toBe('안드로이드 웹뷰(앱 안 브라우저)');
   });
 });
 
