@@ -18,11 +18,15 @@ export const EMPTY_CONDITIONS: MeasureConditions = { model: '', browser: '', pow
 const POWER_LABEL = { on: '켬', off: '끔', unknown: '모름' } as const;
 export const THERMAL_LABEL = { normal: '보통', warm: '따뜻함', hot: '뜨거움', unknown: '모름' } as const;
 
-/** 브라우저 갱신 간격(ms) 중앙값으로 흔한 주사율(60·90·120·144Hz) 중 가까운 값을 고른다 */
-export function estimateRefreshRate(deltas: readonly number[]): number | null {
+/**
+ * 브라우저 갱신 간격(ms)으로 흔한 주사율(60·90·120·144Hz) 중 가까운 값을 고른다.
+ * q: 간격 백분위. 그리기가 느리면 갱신 간격도 같이 늘어나서 중앙값은 주사율을 낮게 본다.
+ * 자동 전환은 가장 짧은 간격 쪽(q=0.1)을 써서 실제 주사율에 가깝게 본다.
+ */
+export function estimateRefreshRate(deltas: readonly number[], q = 0.5): number | null {
   const d = deltas.filter((x) => x > 0 && x < 100).sort((a, b) => a - b);
   if (d.length < 30) return null;
-  const hz = 1000 / d[Math.floor(d.length / 2)]!;
+  const hz = 1000 / d[Math.floor((d.length - 1) * q)]!;
   return [30, 60, 90, 120, 144, 165].reduce((best, r) => (Math.abs(r - hz) < Math.abs(best - hz) ? r : best), 60);
 }
 import type { FrameStats } from './frameStats';
