@@ -8,6 +8,7 @@ import {
 } from '../visualEval';
 import { fmt } from '../metrics';
 import { OriginBadge } from './components';
+import { abandon, claim, KEY_CURRENT, KEY_OWNER, release, saveProgress, tabToken, viewFor } from '../visualEvalLock';
 
 /**
  * V1 감정별 어항 다양성 — 블라인드 시각 평가 화면.
@@ -16,13 +17,14 @@ import { OriginBadge } from './components';
 
 const OPTIONS: RenderOptions = { mossStage: 0, reducedMotion: false };
 const KEY_DONE = 'irurium.visualEval.sessions';
-const KEY_CURRENT = 'irurium.visualEval.current';
 /** 정답 화면(결과 모으기·보기)을 마지막으로 연 시각. 평가 도중에 열렸으면 그 세션은 블라인드 위반 */
 const KEY_REVEALED = 'irurium.visualEval.revealedAt';
 
 function load<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
 }
+function safeLocal(): Storage | null { try { return window.localStorage; } catch { return null; } }
+function safeSession(): Storage | null { try { return window.sessionStorage; } catch { return null; } }
 function save(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 저장 못 해도 화면은 동작 */ }
 }
@@ -31,25 +33,30 @@ type Mode = 'intro' | 'eval' | 'done' | 'results' | 'busy';
 
 export function VisualEvalTab() {
   const set = useMemo(() => runVisualSet(), []);
-  const [mode, setMode] = useState<Mode>(() => (load<VeSession | null>(KEY_CURRENT, null) ? 'eval' : 'intro'));
-  const [current, setCurrent] = useState<VeSession | null>(() => load<VeSession | null>(KEY_CURRENT, null));
+  // 이 탭의 토큰(같은 탭은 새로고침해도 같음). 진행 중 평가는 주인 탭에서만 평가·저장한다
+  const token = useMemo(() => tabToken(safeSession()), []);
+  const initial = useMemo(() => viewFor(safeLocal(), token), [token]);
+  const [mode, setMode] = useState<Mode>(initial.kind === 'owner' ? 'eval' : initial.kind === 'busy' ? 'busy' : 'intro');
+  /** 진행 중 평가(주인이든 아니든). 있으면 정답 화면 버튼이 꺼진다 */
+  const [current, setCurrent] = useState<VeSession | null>(initial.kind === 'none' ? null : initial.session);
+  const [isOwner, setIsOwner] = useState(initial.kind === 'owner');
   const [done, setDone] = useState<VeSession[]>(() => load<VeSession[]>(KEY_DONE, []));
   const [imported, setImported] = useState<VeSession[]>([]);
   const [evaluator, setEvaluator] = useState('');
   const [trial, setTrial] = useState(false);
 
-  useEffect(() => save(KEY_CURRENT, current), [current]);
   useEffect(() => save(KEY_DONE, done), [done]);
   const [blocked, setBlocked] = useState('');
 
   // 다른 탭과 진행 상태를 맞춘다: 다른 탭에서 평가가 시작되면 이 탭의 정답 화면을 바로 닫는다
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === KEY_CURRENT) {
-        const next = load<VeSession | null>(KEY_CURRENT, null);
-        setCurrent(next);
-        // 다른 탭에서 평가가 시작되면 이 탭은 정답·평가 화면을 닫고 안내만 보여 준다(한 평가를 두 탭에서 고치지 않게)
-        setMode(next ? 'busy' : 'intro');
+      if (e.key === KEY_CURRENT || e.key === KEY_OWNER) {
+        // 다른 탭에서 평가가 시작·종료·버려짐: 주인이 아니면 정답·평가 화면을 닫고 안내만 보여 준다
+        const v = viewFor(safeLocal(), token);
+        setCurrent(v.kind === 'none' ? null : v.session);
+        setIsOwner(v.kind === 'owner');
+        setMode((m) => (v.kind === 'owner' ? m : v.kind === 'busy' ? 'busy' : m === 'busy' || m === 'eval' ? 'intro' : m));
       }
       if (e.key === KEY_DONE) setDone(load<VeSession[]>(KEY_DONE, []));
     };
@@ -66,24 +73,43 @@ export function VisualEvalTab() {
     const seed = (crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now()) >>> 0;
     // 화면 시험이거나 자동화 브라우저면 판정에서 빼는 '테스트용'으로 저장
     const origin = trial || navigator.webdriver ? 'synthetic-test' : 'human';
-    setCurrent(newSession(evaluator, seed, new Date(), navigator.userAgent, origin));
+    const session = newSession(evaluator, seed, new Date(), navigator.userAgent, origin);
+    if (!claim(safeLocal(), token, session)) {
+      // 그 사이 다른 탭이 평가를 시작함
+      const v = viewFor(safeLocal(), token);
+      setCurrent(v.kind === 'none' ? null : v.session);
+      setMode('busy');
+      return;
+    }
+    setCurrent(session);
+    setIsOwner(true);
     setMode('eval');
   };
 
   const answer = useCallback((a: VeAnswer) => {
-    if (!current) return;
+    if (!current || !isOwner) return;
     const next = { ...current, answers: [...current.answers.filter((x) => x.pairId !== a.pairId), a] };
+    // 저장 직전에 아직 주인인지 확인(다른 탭에서 이 평가를 버렸으면 저장하지 않음)
+    if (!saveProgress(safeLocal(), token, next)) {
+      const v = viewFor(safeLocal(), token);
+      setIsOwner(false);
+      setCurrent(v.kind === 'none' ? null : v.session);
+      setMode(v.kind === 'busy' ? 'busy' : 'intro');
+      return;
+    }
     if (next.answers.length >= next.order.length) {
       const completedAt = new Date().toISOString();
       // 다른 탭 등에서 평가 도중 정답 화면이 열렸으면 블라인드 위반으로 표시(판정 제외)
       const blindBreach = isBlindBreach(next, load<string | null>(KEY_REVEALED, null), completedAt);
       setDone((d) => [...d, { ...next, completedAt, ...(blindBreach ? { blindBreach } : {}) }]);
+      release(safeLocal(), token);
       setCurrent(null);
+      setIsOwner(false);
       setMode('done');
     } else {
       setCurrent(next);
     }
-  }, [current]);
+  }, [current, isOwner, token]);
 
   const all = useMemo(() => [...done, ...imported], [done, imported]);
   const last = done[done.length - 1] ?? null;
@@ -94,7 +120,7 @@ export function VisualEvalTab() {
         <div className="row spread"><h2 style={{ margin: 0 }}>V1 감정별 어항 다양성 — 시각 평가</h2><OriginBadge origin="sample" /></div>
         <p>같은 책을 같은 속도로 읽어도, 기록한 감정에 따라 어항이 충분히 다르게 보이는지 사람 눈으로 확인해요. 어항은 모두 샘플 기록으로 만들었어요.</p>
         <div className="chips">
-          <button type="button" className={mode !== 'results' ? 'chip on' : 'chip'} disabled={mode === 'busy'} onClick={() => setMode(current ? 'eval' : last && mode === 'done' ? 'done' : 'intro')}>평가하기</button>
+          <button type="button" className={mode !== 'results' ? 'chip on' : 'chip'} disabled={mode === 'busy'} onClick={() => setMode(current ? (isOwner ? 'eval' : 'busy') : last && mode === 'done' ? 'done' : 'intro')}>평가하기</button>
           <button type="button" className={mode === 'results' ? 'chip on' : 'chip'} disabled={!!current} onClick={() => setMode('results')}>결과 모으기·보기 (정답 공개)</button>
         </div>
         {current && <p className="hint">평가 중에는 정답 화면을 열 수 없어요. 끝내거나 "그만하기"를 눌러 주세요.</p>}
@@ -120,11 +146,13 @@ export function VisualEvalTab() {
       {mode === 'busy' && (
         <section className="card">
           <h3>다른 탭에서 평가가 진행 중이에요</h3>
-          <p>그 탭에서 이어서 해 주세요. 평가가 끝나면 이 탭에서도 결과를 볼 수 있어요.</p>
+          <p>그 탭에서 이어서 해 주세요. 이 탭은 새로고침해도 평가 화면으로 들어가지 않아요. 평가가 끝나면 이 탭에서도 결과를 볼 수 있어요.</p>
+          <p className="hint">평가하던 탭을 이미 닫았다면, 그 평가를 버리고 새로 시작할 수 있어요(버린 평가는 판정에 쓰지 않아요).</p>
+          <button type="button" onClick={() => { abandon(safeLocal()); setCurrent(null); setIsOwner(false); setMode('intro'); }}>그 평가 버리고 처음으로</button>
         </section>
       )}
 
-      {mode === 'eval' && current && <EvalStep key={current.answers.length} set={set} session={current} onAnswer={answer} onQuit={() => { setCurrent(null); setMode('intro'); }} />}
+      {mode === 'eval' && current && isOwner && <EvalStep key={current.answers.length} set={set} session={current} onAnswer={answer} onQuit={() => { release(safeLocal(), token); setCurrent(null); setIsOwner(false); setMode('intro'); }} />}
 
       {mode === 'done' && last && <DoneView set={set} session={last} />}
 
