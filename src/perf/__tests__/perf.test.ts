@@ -98,6 +98,10 @@ describe('측정 환경: 실제 휴대폰과 시뮬레이션 구분', () => {
     expect(estimateRefreshRate(Array(120).fill(1000 / 59.9))).toBe(60);
     expect(estimateRefreshRate([...Array(100).fill(1000 / 90), ...Array(10).fill(50)])).toBe(90);
     expect(estimateRefreshRate(Array(10).fill(16.7))).toBeNull();
+    // 그리기가 느려 대부분 4프레임마다 갱신돼도, 짧은 간격 쪽(q=0.1)으로 보면 실제 주사율(60Hz)
+    const throttled = [...Array(90).fill(1000 / 15), ...Array(20).fill(1000 / 60)];
+    expect(estimateRefreshRate(throttled)).toBe(30);
+    expect(estimateRefreshRate(throttled, 0.1)).toBe(60);
   });
 
   it('브라우저 이름 추정(인앱 브라우저 먼저)', () => {

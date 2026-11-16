@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AquariumCanvas, type AquariumCanvasHandle } from './ui/AquariumCanvas';
 import { PerfPanel, perfEnabled } from './ui/PerfPanel';
-import type { RenderQuality } from './render/quality';
+import { clearAutoDecision, useAutoQuality } from './ui/useAutoQuality';
+import { loadPref, PREF_LABEL, safeStorage, type QualityPref } from './perf/autoQuality';
 import type { PerfResult } from './perf/report';
 import { useDialog, type AskOptions, type AskResult } from './ui/Dialog';
 import { BASE_CHIPS, analyzeMood } from './engine/mood';
@@ -53,7 +54,9 @@ export function App() {
   const canvas = useRef<AquariumCanvasHandle>(null);
   // 성능 측정 패널: 개발 서버나 ?perf=1 에서만(일반 사용자 화면에는 없음)
   const [showPerf] = useState(perfEnabled);
-  const [quality, setQuality] = useState<RenderQuality>('normal');
+  // 그래픽 품질: 자동(어항 FPS로 판정) / 일반 / 저사양. 엔진·생물 수는 바뀌지 않는다
+  const [qualityPref, setQualityPref] = useState<QualityPref>(() => loadPref(safeStorage()));
+  const [autoKey, setAutoKey] = useState(0);
   const [perfResults, setPerfResults] = useState<PerfResult[]>([]);
   const onPerfResult = useCallback((r: PerfResult) => setPerfResults((x) => [...x, r]), []);
   const [lastChanges, setLastChanges] = useState<{ title: string; changes: Change[] } | null>(null);
@@ -67,6 +70,7 @@ export function App() {
   s.confirmIfDue(now);
   const head = s.head;
   const moss = s.moss(today);
+  const { quality, status: qualityStatus } = useAutoQuality(canvas, qualityPref, autoKey);
   const options = useMemo<RenderOptions>(() => ({ mossStage: moss.stage, reducedMotion }), [moss.stage, reducedMotion]);
   const invariantErrors = s.checkInvariants({ deep: false });
 
@@ -187,7 +191,7 @@ export function App() {
         <section className="left">
           <AquariumCanvas ref={canvas} state={head.state} options={options} quality={quality} />
           {showPerf && (
-            <PerfPanel canvas={canvas} scene="지금 어항(데모)" quality={quality} onQuality={setQuality} results={perfResults} onResult={onPerfResult} onClear={() => setPerfResults([])} />
+            <PerfPanel canvas={canvas} scene="지금 어항(데모)" quality={quality} onQuality={(q) => setQualityPref(q)} results={perfResults} onResult={onPerfResult} onClear={() => setPerfResults([])} />
           )}
           <div className="status-row">
             <span className="pill">{s.lifecycle === 'active' ? (moss.resting ? '쉬는 중' : '진행 중') : s.lifecycle === 'completed' ? '완성' : '마무리'}</span>
@@ -292,6 +296,17 @@ export function App() {
               <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
             </label>
             <label className="check"><input type="checkbox" checked={reducedMotion} onChange={(e) => setReducedMotion(e.target.checked)} /> 동작 줄이기</label>
+            <div className="field">그래픽 품질
+              <div className="row">
+                {(['auto', 'normal', 'low'] as QualityPref[]).map((p) => (
+                  <label key={p} className="check"><input type="radio" name="quality-pref" checked={qualityPref === p} onChange={() => setQualityPref(p)} /> {PREF_LABEL[p]}{p === 'auto' ? '(추천)' : ''}</label>
+                ))}
+              </div>
+              <small className="hint">지금: {qualityStatus}. 자동은 어항이 버벅이면 저사양으로 바꿔요(물고기·수초 수는 그대로).</small>
+              {qualityPref === 'auto' && quality === 'low' && (
+                <button type="button" className="link" onClick={() => { clearAutoDecision(); setAutoKey((k) => k + 1); }}>일반으로 다시 시험하기</button>
+              )}
+            </div>
           </div>
 
           <div className="card">
@@ -389,4 +404,3 @@ function Timeline({ entries, session, now, ask, onChange, onShow }: {
     </ul>
   );
 }
-

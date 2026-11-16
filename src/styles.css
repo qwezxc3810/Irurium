@@ -65,3 +65,6 @@ button.subtle { background: transparent; border-color: transparent; color: var(-
 .dialog p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
 .dialog input { border: 1px solid #d6d3d1; border-radius: 10px; padding: 10px 12px; font-size: 15px; }
 .row.end { justify-content: flex-end; }
+
+button.link { background: none; border: none; color: #2563eb; padding: 0; margin-top: 4px; text-decoration: underline; cursor: pointer; font-size: 13px; width: auto; }
+.field .hint { display: block; color: #64748b; font-size: 12px; margin-top: 4px; }
