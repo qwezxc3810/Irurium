@@ -8,10 +8,23 @@ export interface MeasureConditions {
   browser: string;
   powerSaving: 'on' | 'off' | 'unknown';
   brightness: string;
+  /** 화면 주사율. 패널이 브라우저 갱신 간격으로 추정해 미리 채우고, 측정자가 고칠 수 있다 */
+  refreshRate: string;
+  /** 측정 끝났을 때 손에 느껴지는 발열 */
+  thermal: 'normal' | 'warm' | 'hot' | 'unknown';
 }
 
-export const EMPTY_CONDITIONS: MeasureConditions = { model: '', browser: '', powerSaving: 'unknown', brightness: '' };
+export const EMPTY_CONDITIONS: MeasureConditions = { model: '', browser: '', powerSaving: 'unknown', brightness: '', refreshRate: '', thermal: 'unknown' };
 const POWER_LABEL = { on: '켬', off: '끔', unknown: '모름' } as const;
+export const THERMAL_LABEL = { normal: '보통', warm: '따뜻함', hot: '뜨거움', unknown: '모름' } as const;
+
+/** 브라우저 갱신 간격(ms) 중앙값으로 흔한 주사율(60·90·120·144Hz) 중 가까운 값을 고른다 */
+export function estimateRefreshRate(deltas: readonly number[]): number | null {
+  const d = deltas.filter((x) => x > 0 && x < 100).sort((a, b) => a - b);
+  if (d.length < 30) return null;
+  const hz = 1000 / d[Math.floor(d.length / 2)]!;
+  return [30, 60, 90, 120, 144, 165].reduce((best, r) => (Math.abs(r - hz) < Math.abs(best - hz) ? r : best), 60);
+}
 import type { FrameStats } from './frameStats';
 
 export interface RenderInfo {
@@ -77,7 +90,7 @@ export function formatReport(results: PerfResult[], env: EnvInfo, declared: Decl
     `자동 판정: ${env.kind === 'mobile' ? '휴대폰' : env.kind === 'simulated' ? '시뮬레이션' : '데스크톱'} (${env.reasons.join(', ')})`,
     `기기: ${env.userAgent}`,
     `CPU 코어 ${env.cores ?? '알 수 없음'} · 메모리 ${env.memoryGb != null ? `${env.memoryGb}GB 이상` : '알 수 없음'}`,
-    `측정 조건(측정자 기록): 기종 ${cond.model.trim() || '안 적음'} · 브라우저 ${cond.browser.trim() || '안 적음'} · 절전 모드 ${POWER_LABEL[cond.powerSaving]} · 화면 밝기 ${cond.brightness.trim() || '안 적음'}`,
+    `측정 조건(측정자 기록): 기종 ${cond.model.trim() || '안 적음'} · 브라우저 ${cond.browser.trim() || '안 적음'} · 화면 주사율 ${cond.refreshRate.trim() || '안 적음'} · 절전 모드 ${POWER_LABEL[cond.powerSaving]} · 화면 밝기 ${cond.brightness.trim() || '안 적음'} · 발열 ${THERMAL_LABEL[cond.thermal]}`,
     '',
     ...results.map(formatResult),
   ].join('\n');

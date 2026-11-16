@@ -4,7 +4,7 @@ import type { AquariumCanvasHandle } from './AquariumCanvas';
 import { QUALITY_LABEL, type RenderQuality } from '../render/quality';
 import { currentEnvironment, guessBrowser, sourceLabel, type Declared } from '../perf/env';
 import { computeFrameStats, RafMeter, type FrameStats } from '../perf/frameStats';
-import { EMPTY_CONDITIONS, formatReport, limitLabel, type MeasureConditions, type PerfResult } from '../perf/report';
+import { EMPTY_CONDITIONS, estimateRefreshRate, formatReport, limitLabel, type MeasureConditions, type PerfResult } from '../perf/report';
 
 /**
  * 성능 측정 패널(개발·검증 환경 전용). 일반 사용자 화면에는 붙이지 않는다(perfEnabled 참고).
@@ -68,6 +68,9 @@ export function PerfPanel({ canvas, scene, quality, onQuality, results, onResult
       const aq = canvas.current?.renderFrames();
       setLive({ aq: computeFrameStats(aq ? aq.recent(LIVE_WINDOW_MS, now) : []), raf: computeFrameStats(m.rec.recent(LIVE_WINDOW_MS, now)) });
       setInfo(canvas.current?.renderInfo() ?? null);
+      // 화면 주사율은 비어 있을 때 한 번만 추정해 채운다(측정자가 고친 값은 덮지 않음)
+      const hz = estimateRefreshRate(m.rec.recent(LIVE_WINDOW_MS, now));
+      if (hz) setCond((c) => (c.refreshRate ? c : { ...c, refreshRate: `${hz}Hz(자동 추정)` }));
     }, 500);
     return () => { window.clearInterval(id); m.stop(); };
   }, [canvas]);
@@ -209,8 +212,10 @@ export function PerfPanel({ canvas, scene, quality, onQuality, results, onResult
           <label>브라우저 <input value={cond.browser} placeholder="예: 삼성 인터넷" onChange={(e) => setCond({ ...cond, browser: e.target.value })} /></label>
           <label>절전 모드 <select value={cond.powerSaving} onChange={(e) => setCond({ ...cond, powerSaving: e.target.value as MeasureConditions['powerSaving'] })}><option value="unknown">모름</option><option value="off">끔</option><option value="on">켬</option></select></label>
           <label>화면 밝기 <input value={cond.brightness} placeholder="예: 자동, 50%" onChange={(e) => setCond({ ...cond, brightness: e.target.value })} /></label>
+          <label>화면 주사율 <input value={cond.refreshRate} placeholder="예: 120Hz" onChange={(e) => setCond({ ...cond, refreshRate: e.target.value })} /></label>
+          <label>발열(측정 뒤) <select value={cond.thermal} onChange={(e) => setCond({ ...cond, thermal: e.target.value as MeasureConditions['thermal'] })}><option value="unknown">모름</option><option value="normal">보통</option><option value="warm">따뜻함</option><option value="hot">뜨거움</option></select></label>
         </div>
-        <p className="perf-hint">같은 조건끼리 비교하려고 적어요. 결과 텍스트에 같이 들어가요.</p>
+        <p className="perf-hint">같은 조건끼리 비교하려고 적어요. 결과 텍스트에 같이 들어가요. 브라우저·주사율은 자동 추정이라 틀리면 고쳐 주세요.</p>
       </fieldset>
 
       {results.length > 0 && (

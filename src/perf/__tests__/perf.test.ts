@@ -9,7 +9,7 @@ import { QUALITY, qualityResolution } from '../../render/quality';
 import { detectEnvironment, guessBrowser, sourceLabel } from '../env';
 import rendererSource from '../../render/AquariumRenderer.ts?raw';
 import { computeFrameStats, FrameRecorder } from '../frameStats';
-import { formatReport, type PerfResult } from '../report';
+import { estimateRefreshRate, formatReport, type PerfResult } from '../report';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 const ANDROID = 'Mozilla/5.0 (Linux; Android 14; SM-A155N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36';
@@ -88,9 +88,16 @@ describe('측정 환경: 실제 휴대폰과 시뮬레이션 구분', () => {
     const bad = formatReport([{ ...r, invalid: '측정 중 화면이 숨겨졌어요', frameLimit: 15 }], detectEnvironment({ userAgent: DESKTOP }), 'unset');
     expect(bad).toContain('⚠️ 무효(참고용): 측정 중 화면이 숨겨졌어요');
     expect(bad).toContain('진단용 어항 갱신 제한: 15fps 제한');
-    const cond = formatReport([r], detectEnvironment({ userAgent: ANDROID, maxTouchPoints: 5 }), 'real-phone', { model: '갤럭시 A15', browser: '삼성 인터넷 27', powerSaving: 'off', brightness: '자동' });
-    expect(cond).toContain('측정 조건(측정자 기록): 기종 갤럭시 A15 · 브라우저 삼성 인터넷 27 · 절전 모드 끔 · 화면 밝기 자동');
-    expect(formatReport([r], detectEnvironment({ userAgent: DESKTOP }), 'unset')).toContain('기종 안 적음 · 브라우저 안 적음 · 절전 모드 모름 · 화면 밝기 안 적음');
+    const cond = formatReport([r], detectEnvironment({ userAgent: ANDROID, maxTouchPoints: 5 }), 'real-phone', { model: '갤럭시 A15', browser: '삼성 인터넷 27', powerSaving: 'off', brightness: '자동', refreshRate: '90Hz', thermal: 'warm' });
+    expect(cond).toContain('측정 조건(측정자 기록): 기종 갤럭시 A15 · 브라우저 삼성 인터넷 27 · 화면 주사율 90Hz · 절전 모드 끔 · 화면 밝기 자동 · 발열 따뜻함');
+    expect(formatReport([r], detectEnvironment({ userAgent: DESKTOP }), 'unset')).toContain('기종 안 적음 · 브라우저 안 적음 · 화면 주사율 안 적음 · 절전 모드 모름 · 화면 밝기 안 적음 · 발열 모름');
+  });
+
+  it('화면 주사율 추정: 갱신 간격 중앙값을 흔한 주사율로', () => {
+    expect(estimateRefreshRate(Array(120).fill(1000 / 120))).toBe(120);
+    expect(estimateRefreshRate(Array(120).fill(1000 / 59.9))).toBe(60);
+    expect(estimateRefreshRate([...Array(100).fill(1000 / 90), ...Array(10).fill(50)])).toBe(90);
+    expect(estimateRefreshRate(Array(10).fill(16.7))).toBeNull();
   });
 
   it('브라우저 이름 추정(인앱 브라우저 먼저)', () => {
