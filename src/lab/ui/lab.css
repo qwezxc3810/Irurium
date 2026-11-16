@@ -125,3 +125,11 @@ table.matrix td { text-align: center; }
 .style-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
 .style-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
 .style-grid.two { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+
+.ve-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0; }
+.ve-pair figure { margin: 0; }
+.ve-pair figcaption { font-weight: 700; margin-bottom: 4px; }
+.ve-q .chips { margin-bottom: 6px; }
+@media (max-width: 640px) { .ve-pair { grid-template-columns: 1fr; } }
+button.link { background: none; border: none; color: #2563eb; padding: 0; text-decoration: underline; cursor: pointer; font-size: 13px; }
+span.bad { color: var(--warn); font-size: 13px; }
