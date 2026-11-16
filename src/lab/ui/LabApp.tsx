@@ -119,7 +119,7 @@ function Overview({ suite, hyps, onHyp }: { suite: SuiteResult; hyps: Hypothesis
           <li className={dist.ok ? 'ok' : 'bad'}><b>수치 기준 {dist.ok ? '통과' : '미달'}</b> · 감정만 다르고 시드는 같은 어항끼리 가장 비슷한 쌍({dist.emotionMinPair})의 차이 <b>{fmt(dist.emotionMin, 3)}</b> &gt; 감정은 같고 시드만 다른 어항끼리 가장 다른 쌍 <b>{fmt(dist.seedMax, 3)}</b></li>
           <li className={dist.okAB ? 'ok' : 'bad'}><b>수치 기준 {dist.okAB ? '통과' : '미달'}</b> · 사례 B(극단) 가장 비슷한 쌍 <b>{fmt(dist.extremeMin, 3)}</b> &gt; 사례 A(비슷) 가장 다른 쌍 <b>{fmt(dist.similarMax, 3)}</b></li>
           <li className="pending"><b>시각적 구별: 미검증</b> · 짝짓기 테스트(사람 평가) 대기</li>
-          <li className={invFails.length ? 'bad' : 'ok'}>불변 규칙 I1~I4(모든 스냅샷 다시 계산 포함): 어항 {all.length}개 중 {all.length - invFails.length}개 통과</li>
+          <li className={invFails.length ? 'bad' : 'ok'}>불변 규칙 I1~I6(지금 엔진 버전 스냅샷은 다시 계산 포함): 어항 {all.length}개 중 {all.length - invFails.length}개 통과</li>
           <li className={ruleFails.length ? 'bad' : 'ok'}>하루 규칙(새 오브젝트 1개·주요 변화 1회·조명 30%·확정 순서): {ruleFails.length ? `어긋남 ${ruleFails.join(', ')}` : '모두 통과'}</li>
         </ul>
         <p className="limit">{VISUAL_CAVEAT}</p>
@@ -457,9 +457,9 @@ function UserTab({ onOpen }: { onOpen: (o: OpenFrame) => void }) {
           <section className="card">
             <h2>무결성(읽기 전용 확인)</h2>
             <ul className="checks">
-              <li className={integrity.problems.length ? 'bad' : 'ok'}>스냅샷 {integrity.checked}개 검사(내용 해시 I3 · 기준 체인 I4 · 같은 엔진 버전은 다시 계산 I2): {integrity.problems.length ? integrity.problems.slice(0, 3).join(' / ') : '모두 일치'}</li>
+              <li className={integrity.problems.length ? 'bad' : 'ok'}>스냅샷 {integrity.checked}개 검사(내용 해시 I3 · 기준 체인 I5 · 입력 해시 I6 · 같은 엔진 버전은 다시 계산 I2): {integrity.problems.length ? integrity.problems.slice(0, 3).join(' / ') : '모두 일치'}</li>
               {integrity.otherVersion > 0 && (
-                <li className="ok">엔진 {integrity.versions.join(', ')}로 만든 기록이에요. 지금 엔진({ENGINE_VERSION})과 다른 버전 스냅샷 {integrity.otherVersion}개는 저장된 결과를 그대로 보여 주고, 내용 해시(I3)와 기준 체인(I4)만 확인했어요. 다시 계산(I2)은 하지 않아서, 이 스냅샷들의 입력만 바뀐 경우는 잡지 못해요.</li>
+                <li className="ok">엔진 {integrity.versions.join(', ')}로 만든 기록이에요. 지금 엔진({ENGINE_VERSION})과 다른 버전 스냅샷 {integrity.otherVersion}개는 저장된 결과를 그대로 보여 주고, 내용 해시(I3)·기준 체인(I5)·입력 해시(I6)만 확인했어요. 다시 계산(I2)은 하지 않아서, 그때 규칙으로 맞게 계산됐는지와 상태·내용 해시를 함께 고쳐 쓴 경우는 확인하지 못해요.</li>
               )}
               <li className="ok">원본 지문 <code>{integrity.fingerprint}</code> · 기록 {run.entryCount}개 · 어항 {data.cfg.tankId} · 저장된 상태 {LIFECYCLE_LABEL[data.lifecycle]}</li>
               {check && <li className={check.before === check.after ? 'ok' : 'bad'}>가상 실험 전후 원본 지문: {check.before} → {check.after} {check.before === check.after ? '(그대로)' : '(바뀜!)'}</li>}

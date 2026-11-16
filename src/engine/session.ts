@@ -16,9 +16,13 @@ import type {
  *  I2 스냅샷 n = computeSnapshot(직전 확정 스냅샷, 기록 n)
  *  I3 확정 스냅샷은 다시 계산하지 않는다(만든 뒤 내용이 바뀌지 않는다)
  *  I4 기록의 localDate는 줄어들지 않는다(미확정 상태에서 폐기한 기록은 기록 흐름에서 빠지므로 제외)
+ *  I5 기록 체인 구조: 스냅샷은 머리→시작까지 한 줄(갈래·고아·순환 없음), 순번이 맞고, 기록 순번·id·clientId가 겹치지 않는다
+ *  I6 입력 해시 체인: 기준의 입력 해시 + 입력 + 엔진 버전으로 만든 해시가 저장된 값과 같다(엔진 버전과 관계없이 확인)
+ *
+ * 엔진 버전이 섞인 기록: 그 전 버전 스냅샷은 다시 계산하지 않고 그대로 둔다. I2 재계산은 지금 버전 스냅샷만 한다.
  */
 
-function contentHashOf(o: Pick<EngineOutput, 'state' | 'ledger' | 'changes'>): string {
+export function contentHashOf(o: Pick<EngineOutput, 'state' | 'ledger' | 'changes'>): string {
   return hashOf({ state: o.state, ledger: o.ledger, changes: o.changes });
 }
 
@@ -280,7 +284,9 @@ export class TankSession {
    */
   checkInvariants(opts: { deep?: boolean } = {}): string[] {
     const deep = opts.deep ?? true;
-    const errors: string[] = [];
+    const errors: string[] = [...structureProblems(this.d)];
+    // 구조가 깨졌으면(기준 없음·순환 등) 아래 검사는 기준을 따라갈 수 없어서 여기서 멈춘다
+    if (errors.length) return errors;
     // I1
     const drafts = this.d.snapshots.filter((s) => s.status === 'draft');
     if (drafts.length > 1) errors.push('I1: 미확정 스냅샷이 2개 이상');
@@ -293,8 +299,11 @@ export class TankSession {
       if (s.baseId && this.snap(s.baseId).status !== 'confirmed') errors.push(`I2: ${s.id}의 기준이 확정본이 아님`);
       // I3: 만든 뒤 내용이 바뀌지 않았는지
       if (contentHashOf(s) !== s.contentHash) errors.push(`I3: ${s.id}의 내용이 만든 뒤 바뀜`);
-      // I2: 저장된 입력으로 다시 계산하면 같은 결과
-      if (deep && s.baseId) {
+      // I6: 입력 해시 체인(기준의 입력 해시 + 이 스냅샷의 입력 + 엔진 버전). 엔진 버전과 관계없이 확인할 수 있다
+      if (expectedInputHash(s, s.baseId ? this.snap(s.baseId) : null) !== s.inputHash) errors.push(`I6: ${s.id}의 입력 해시가 맞지 않음(입력·기준·엔진 버전이 바뀜)`);
+      // I2: 저장된 입력으로 다시 계산하면 같은 결과. 지금 엔진 버전으로 만든 스냅샷만 확인한다.
+      // 그 전 버전 스냅샷은 그때 규칙으로 만든 결과가 정답이라, 지금 규칙으로 다시 계산해 비교하지 않는다(재계산·덮어쓰기 금지)
+      if (deep && s.baseId && s.engineVersion === ENGINE_VERSION) {
         const base = this.snap(s.baseId);
         const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq) : s.input ? computeSnapshot(base, s.input, s.cfg) : null;
         if (!again) errors.push(`I2: ${s.id}에 계산 입력이 없음`);
@@ -307,6 +316,43 @@ export class TankSession {
       if (chain[i]!.localDate < chain[i - 1]!.localDate) errors.push('I4: localDate 감소');
     }
     return errors;
+  }
+
+  /**
+   * 무결성 검사 범위(엔진 버전이 섞인 기록용). 어떤 스냅샷을 무엇으로 확인했는지 센다.
+   * - contentChecked: 내용 해시(I3) — 모든 스냅샷
+   * - inputChainChecked: 입력 해시 체인(I6)·구조(I5) — 모든 스냅샷
+   * - recomputed: 다시 계산(I2) — 지금 엔진 버전으로 만든 스냅샷만
+   * - notRecomputed: 다른 엔진 버전 스냅샷(그때 규칙으로 맞게 계산됐는지는 확인할 수 없음)
+   */
+  integrityScope(): { versions: string[]; contentChecked: number; inputChainChecked: number; recomputed: number; notRecomputed: number } {
+    const derived = this.d.snapshots.filter((s) => s.baseId);
+    const recomputed = derived.filter((s) => s.engineVersion === ENGINE_VERSION).length;
+    return {
+      versions: [...new Set(this.d.snapshots.map((s) => s.engineVersion))].sort(),
+      contentChecked: this.d.snapshots.length,
+      inputChainChecked: this.d.snapshots.length,
+      recomputed,
+      notRecomputed: derived.length - recomputed,
+    };
+  }
+
+  /**
+   * 저장한 세션을 불러온다(앱을 다시 열 때). 저장된 스냅샷은 **다시 계산하지 않고 그대로** 쓴다.
+   * 그 전 엔진 버전으로 만든 스냅샷도 그대로 두고, 새 기록부터 지금 엔진으로 계산한다.
+   * 구조(I5)·입력 해시(I6)·내용 해시(I3)·미확정(I1)·날짜(I4)가 맞지 않으면 불러오지 않는다(session_invalid).
+   * 불러올 때는 다시 계산(I2)을 하지 않는다(기록 수에 비례해 느려서). I2까지 보려면 불러온 뒤 checkInvariants({ deep: true }).
+   */
+  static fromJSON(data: SessionData): TankSession {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.snapshots) || !Array.isArray(data.entries)
+      || !Array.isArray(data.revisions) || !Array.isArray(data.restRules) || typeof data.headId !== 'string' || !data.cfg) {
+      throw new Error('session_invalid: 형식이 맞지 않음');
+    }
+    const s = new TankSession(data.cfg);
+    s.d = JSON.parse(JSON.stringify(data)) as SessionData;
+    const errs = s.checkInvariants({ deep: false });
+    if (errs.length) throw new Error(`session_invalid: ${errs.join(' / ')}`);
+    return s;
   }
 
   /** 같은 기록을 새 세션에 넣었을 때의 어항 상태. 시드·배치 비교 테스트용. */
@@ -346,3 +392,68 @@ function sanitize(p: EntryPatch): EntryPatch {
   if (p.progressValue !== undefined) out.progressValue = p.progressValue;
   return out;
 }
+
+/** 스냅샷의 입력 해시가 어떻게 만들어지는지(만들 때와 같은 식). 0.1.0과 0.2.0이 같은 식을 쓴다 */
+export function expectedInputHash(s: Snapshot, base: Snapshot | null): string {
+  if (s.kind === 'genesis') return hashOf({ cfg: s.cfg });
+  if (!base) return '';
+  if (s.kind === 'finale') return hashOf({ base: base.inputHash, finale: true, v: s.engineVersion });
+  return hashOf({ base: base.inputHash, input: s.input, v: s.engineVersion });
+}
+
+/**
+ * I5: 기록 체인 구조. 엔진 버전과 관계없이 확인한다.
+ * 스냅샷은 머리에서 시작 스냅샷까지 한 줄로 이어져야 하고(갈래·고아·순환 없음), 순번이 맞아야 한다.
+ * 기록은 순번이 1부터 빠짐없이, id·clientId가 겹치지 않아야 한다.
+ */
+export function structureProblems(d: Pick<SessionData, 'snapshots' | 'entries' | 'headId'>): string[] {
+  const errs: string[] = [];
+  const byId = new Map<string, Snapshot>();
+  for (const s of d.snapshots) {
+    if (byId.has(s.id)) errs.push(`I5: 스냅샷 id가 겹침(${s.id})`);
+    byId.set(s.id, s);
+  }
+  const geneses = d.snapshots.filter((s) => s.kind === 'genesis');
+  if (geneses.length !== 1) errs.push(`I5: 시작 스냅샷이 ${geneses.length}개`);
+  for (const s of d.snapshots) {
+    if (s.kind === 'genesis') {
+      if (s.baseId) errs.push(`I5: 시작 스냅샷(${s.id})에 기준이 있음`);
+      continue;
+    }
+    const base = s.baseId ? byId.get(s.baseId) : undefined;
+    if (!base) { errs.push(`I5: ${s.id}의 기준 스냅샷(${s.baseId ?? '없음'})이 없음`); continue; }
+    const seqOk = s.kind === 'finale' ? base.seq === s.seq : base.seq < s.seq;
+    if (!seqOk) errs.push(`I5: ${s.id}(#${s.seq})의 기준 순번이 맞지 않음(${base.id} #${base.seq})`);
+  }
+  const head = byId.get(d.headId);
+  if (!head) errs.push(`I5: 머리 스냅샷(${d.headId})이 없음`);
+  else if (!errs.length) {
+    // 머리에서 기준을 따라 시작까지 한 줄: 모든 스냅샷을 정확히 한 번씩 지나야 한다
+    const seen = new Set<string>();
+    let cur: Snapshot | undefined = head;
+    while (cur) {
+      if (seen.has(cur.id)) { errs.push('I5: 기준 체인이 순환함'); break; }
+      seen.add(cur.id);
+      cur = cur.baseId ? byId.get(cur.baseId) : undefined;
+    }
+    if (!errs.length && seen.size !== d.snapshots.length) errs.push(`I5: 머리에서 이어지지 않은 스냅샷이 ${d.snapshots.length - seen.size}개(갈래·고아)`);
+  }
+  const entryIds = new Set<string>();
+  const clientIds = new Set<string>();
+  d.entries.forEach((e, i) => {
+    if (e.seq !== i + 1) errs.push(`I5: 기록 순번이 맞지 않음(${e.id}: #${e.seq}, 자리 ${i + 1})`);
+    if (entryIds.has(e.id)) errs.push(`I5: 기록 id가 겹침(${e.id})`);
+    if (clientIds.has(e.clientId)) errs.push(`I5: 같은 기록이 두 번 들어감(clientId ${e.clientId})`);
+    entryIds.add(e.id);
+    clientIds.add(e.clientId);
+  });
+  for (const s of d.snapshots) {
+    if (s.kind !== 'entry') continue;
+    const e = d.entries.find((x) => x.id === s.entryId);
+    if (!e) errs.push(`I5: ${s.id}의 기록(${s.entryId})이 없음`);
+    else if (e.seq !== s.seq) errs.push(`I5: ${s.id}의 순번과 기록 순번이 다름`);
+    else if (e.deleteMode === 'discarded') errs.push(`I5: 폐기한 기록(${e.id})의 스냅샷이 남아 있음`);
+  }
+  return errs;
+}
+
