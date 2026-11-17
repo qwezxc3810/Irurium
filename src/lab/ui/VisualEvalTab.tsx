@@ -3,13 +3,13 @@ import { AquariumCanvas } from '../../ui/AquariumCanvas';
 import type { RenderOptions } from '../../render/AquariumRenderer';
 import {
   autoMetrics, blindPair, compareRows, countedSessions, EMOTION_LABEL, exclusionReason, isBlindBreach, canStartEvaluation, REVEAL_HEARTBEAT_MS, formatV1Report, GUESS_LABEL, newSession, PAIR_KIND_LABEL,
-  parseSessions, runVisualSet, SAME_LABEL, styleOf, v1Verdict, V1_CRITERIA, V1_VERDICT_LABEL, VE_DAYS, waterGaps,
+  guessMatrix, parseSessions, runVisualSet, SAME_LABEL, styleOf, v1Verdict, V1_CRITERIA, V1_VERDICT_LABEL, VE_DAYS, waterGaps,
   type EmotionGuess, type SameAnswer, type VeAnswer, type VeSession,
 } from '../visualEval';
 import { fmt } from '../metrics';
 import { OriginBadge } from './components';
 import { stills } from './stills';
-import { RENDER_STYLE, STYLE_LABEL, type RenderStyle } from '../../render/atmosphere';
+import { PREVIOUS_STYLE, RENDER_STYLE, RENDER_STYLES, STYLE_LABEL, type RenderStyle } from '../../render/atmosphere';
 import { abandon, claim, KEY_CURRENT, KEY_OWNER, release, saveProgress, tabToken, viewFor } from '../visualEvalLock';
 
 /**
@@ -141,7 +141,7 @@ export function VisualEvalTab() {
           <label className="field">평가자 별칭(선택, 이름 대신 이니셜 등)<input value={evaluator} maxLength={40} onChange={(e) => setEvaluator(e.target.value)} /></label>
           <div className="field">렌더링 버전
             <div className="row">
-              {(['atmos-1', 'v0'] as RenderStyle[]).map((st) => (
+              {RENDER_STYLES.map((st) => (
                 <label key={st} className="check"><input type="radio" name="ve-style" checked={style === st} onChange={() => setStyle(st)} /> {STYLE_LABEL[st]}{st === RENDER_STYLE ? ' — 지금 기본' : ''}</label>
               ))}
             </div>
@@ -283,7 +283,7 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
     <>
       <section className="card">
         <div className="chips">
-          {(['atmos-1', 'v0'] as RenderStyle[]).map((st) => (
+          {RENDER_STYLES.map((st) => (
             <button key={st} type="button" className={style === st ? 'chip on' : 'chip'} onClick={() => setStyle(st)}>{STYLE_LABEL[st]} 결과</button>
           ))}
         </div>
@@ -315,6 +315,18 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
           </table>
         </div>
         <p className="hint">자동 거리는 감정 쪽 구성과 물빛만 봐요(배치 위치는 안 봄). 시드만 다른 쌍은 이 거리가 0이어도 배치가 달라서(배치 차이 {fmt(Math.min(...metrics.filter((m) => m.kind === 'seed').map((m) => m.layout)))}~{fmt(Math.max(...metrics.filter((m) => m.kind === 'seed').map((m) => m.layout)))}) 사람 눈에는 달라 보일 수 있어요. 이 차이를 사람 평가로 확인해요.</p>
+        {counted.length > 0 && (() => {
+          const gm = guessMatrix(all, set.tanks, style);
+          return (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>실제 감정 \ 고른 답</th><th>따뜻함</th><th>차가움</th><th>들쑥날쑥</th><th>모르겠어요</th></tr></thead>
+                <tbody>{(['warm', 'cool', 'swing'] as const).map((k) => <tr key={k}><td>{EMOTION_LABEL[k]}</td><td>{gm[k].warm}</td><td>{gm[k].cool}</td><td>{gm[k].swing}</td><td>{gm[k].unsure}</td></tr>)}</tbody>
+              </table>
+              <p className="hint">감정 맞히기 답 분포예요(감정 쌍·시드 쌍의 어항 모두, 대조 쌍 제외). '모르겠어요'가 많은지, 어떤 감정과 헷갈리는지 봐요.</p>
+            </div>
+          );
+        })()}
         <div className="row">
           <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(report); setCopied('정리 텍스트를 복사했어요'); } catch { setCopied('자동 복사가 막혔어요. 아래에서 직접 복사해 주세요'); } }}>정리 텍스트 복사</button>
           {copied && <span className="hint">{copied}</span>}
@@ -348,8 +360,8 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
       </section>
 
       <section className="card">
-        <h3>렌더링 비교: 기존(v0) ↔ 분위기(atmos-1)</h3>
-        <p className="hint">같은 어항(같은 엔진 상태)을 두 렌더링으로 그린 정지 그림이에요. 분위기 렌더링은 생물 뒤 물색 덧칠·보조 빛·빛 입자만 더해요(생물 수·배치는 같음).</p>
+        <h3>렌더링 비교: {STYLE_LABEL[PREVIOUS_STYLE]} ↔ {STYLE_LABEL[RENDER_STYLE]}</h3>
+        <p className="hint">같은 어항(같은 엔진 상태)을 두 렌더링으로 그린 정지 그림이에요. 감정 배경(atmos-2)은 분위기 렌더링 위에 배경 그림 한 장의 색감만 감정별로 바꿔요(생물·수초·수석·모래와 배치는 같음). 변화 큼의 빛이 오가는 움직임은 실제 화면에서만 보여요.</p>
         <div className="table-wrap">
           <table>
             <thead><tr><th>날짜</th><th>렌더링</th><th>감정 쌍 물색 차이(자동)</th><th>시드 쌍 물색 차이(자동)</th></tr></thead>
@@ -362,10 +374,10 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
             <figure key={k + day}>
               <figcaption>{shortEmo(set.tanks.find((t) => t.key === k)!.emotion)} · {day}일</figcaption>
               <div className="ve-compare-row">
-                <StillImg state={set.state(k, day)} spread={set.spread(k, day)} style="v0" />
-                <StillImg state={set.state(k, day)} spread={set.spread(k, day)} style="atmos-1" />
+                <StillImg state={set.state(k, day)} spread={set.spread(k, day)} style={PREVIOUS_STYLE} />
+                <StillImg state={set.state(k, day)} spread={set.spread(k, day)} style={RENDER_STYLE} />
               </div>
-              <small className="hint">왼쪽 기존 · 오른쪽 분위기</small>
+              <small className="hint">왼쪽 {PREVIOUS_STYLE} · 오른쪽 {RENDER_STYLE}</small>
             </figure>
           )))}
         </div>

@@ -12,11 +12,17 @@
  * 알파 상한과 곱하기 색의 밝기 하한을 두어 어둡거나 탁해지지 않게 한다.
  */
 
-export type RenderStyle = 'v0' | 'atmos-1';
+export type RenderStyle = 'v0' | 'atmos-1' | 'atmos-2';
 /** 지금 기본 렌더링. V1 평가 세션에 기록해 렌더링 버전끼리 결과가 섞이지 않게 한다 */
-export const RENDER_STYLE: RenderStyle = 'atmos-1';
+export const RENDER_STYLE: RenderStyle = 'atmos-2';
+/** 바로 이전 실험(비교 화면 왼쪽) */
+export const PREVIOUS_STYLE: RenderStyle = 'atmos-1';
+/** 평가·결과 화면에서 고를 수 있는 순서(새 것부터) */
+export const RENDER_STYLES: RenderStyle[] = ['atmos-2', 'atmos-1', 'v0'];
 export const LEGACY_STYLE: RenderStyle = 'v0';
-export const STYLE_LABEL: Record<RenderStyle, string> = { v0: '기존 렌더링(v0)', 'atmos-1': '분위기 렌더링(atmos-1)' };
+export const STYLE_LABEL: Record<RenderStyle, string> = { v0: '기존 렌더링(v0)', 'atmos-1': '분위기 렌더링(atmos-1)', 'atmos-2': '감정 배경(atmos-2)' };
+/** 배경 그림 자체의 색감을 감정에 따라 바꾸는 렌더링인지 */
+export const hasBackgroundGrade = (s: RenderStyle) => s === 'atmos-2';
 
 export interface MoodInput {
   /** 엔진 조명 온도 -1(차가움) ~ +1(따뜻함) */
@@ -178,4 +184,66 @@ export function compositeWater(water: number, a: Atmosphere): [number, number, n
     const added = Math.min(255, v + top[i]! * ka);
     return added * (1 - kb + kb * (bot[i]! / 255));
   }) as [number, number, number];
+}
+
+// ───────── 감정 배경 색감(atmos-2): 같은 배경 그림을 감정별 두 색(듀오톤)으로 다시 칠한다 ─────────
+//
+// 배경의 밝기(L)를 어두운 색 lo → 밝은 색 hi 사이로 옮긴다(L이 BG_REF 이상이면 hi를 넘어 더 밝아짐: 빛줄기는 밝게 남음).
+// 물고기·수초·수석·바닥 모래는 칠하지 않는다(배경 그림 한 장만). 엔진과 무관하다.
+// - 따뜻함: 노을 라군(호박·살구빛 물, 금빛 빛줄기)
+// - 차가움: 달빛 새벽(채도를 뺀 강철 청색, 은빛 빛줄기) — 원래의 선명한 파랑과 구별되게
+// - 변화 큼: 해 질 녘(어두운 곳은 푸르고 밝은 곳은 복숭앗빛) — 따뜻함과 차가움이 한 화면에 같이
+export interface Duotone { lo: number; hi: number }
+export const BG_REF = 0.4;
+export const BG_MAPS: Record<'warm' | 'cool' | 'swing', Duotone> = {
+  warm: { lo: 0x3a1c2c, hi: 0xf2b070 }, // 기존 조명의 따뜻한 보정이 위에 더해지므로 살짝 덜 진하게
+  cool: { lo: 0x0a1434, hi: 0x96b6e8 },
+  swing: { lo: 0x162860, hi: 0xffaa96 },
+};
+
+export interface BackgroundGrade {
+  /** PixiJS ColorMatrixFilter용 4×5 행렬(입력·출력 0~1, 오프셋도 0~1) */
+  matrix: number[];
+  /** 원래 배경에서 얼마나 옮겼나(0 = 원래 그대로, 1 = 감정 색감 그대로) */
+  strength: number;
+  weights: { warm: number; cool: number; swing: number };
+}
+
+const LUMA_W = [0.2126, 0.7152, 0.0722] as const;
+const IDENTITY = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0];
+
+function duotoneMatrix(d: Duotone): number[] {
+  const ch = (c: number) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255];
+  const lo = ch(d.lo);
+  const hi = ch(d.hi);
+  const m: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const k = (hi[i]! - lo[i]!) / BG_REF;
+    m.push(k * LUMA_W[0], k * LUMA_W[1], k * LUMA_W[2], 0, lo[i]!);
+  }
+  m.push(0, 0, 0, 1, 0);
+  return m;
+}
+
+/** 감정 → 배경 색감 행렬. atmosphere()와 같은 연속 가중치(따뜻함·차가움·대비)를 쓴다 */
+export function backgroundGrade(m: MoodInput): BackgroundGrade {
+  const a = atmosphere(m);
+  const weights = { warm: a.warm * (1 - a.contrast), cool: a.cool * (1 - a.contrast), swing: a.contrast };
+  const sum = weights.warm + weights.cool + weights.swing;
+  const strength = Math.min(1, sum);
+  if (sum <= 1e-6) return { matrix: [...IDENTITY], strength: 0, weights };
+  const maps = (['warm', 'cool', 'swing'] as const).map((k) => [duotoneMatrix(BG_MAPS[k]), weights[k] / sum] as const);
+  const matrix = IDENTITY.map((id, i) => (1 - strength) * id + strength * maps.reduce((acc, [mx, w]) => acc + mx[i]! * w, 0));
+  return { matrix, strength, weights };
+}
+
+/** 행렬을 RGB(0~255)에 적용(오프셋 포함) */
+export function applyBackgroundGrade(rgb: readonly [number, number, number], g: Pick<BackgroundGrade, 'matrix'>): [number, number, number] {
+  const x = rgb.map((v) => v / 255);
+  const out: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const r = g.matrix.slice(i * 5, i * 5 + 5);
+    out.push(Math.round(Math.max(0, Math.min(1, r[0]! * x[0]! + r[1]! * x[1]! + r[2]! * x[2]! + r[4]!)) * 255));
+  }
+  return out as [number, number, number];
 }

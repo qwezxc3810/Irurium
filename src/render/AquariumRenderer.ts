@@ -1,9 +1,9 @@
 // 엄격한 보안 정책(CSP)에서 eval 없이 셰이더 코드를 만들도록 PixiJS 대체 구현을 켠다(호스팅 환경 호환).
 import 'pixi.js/unsafe-eval';
-import { Application, ColorMatrixFilter, Container, Graphics, Sprite, UPDATE_PRIORITY, type Texture } from 'pixi.js';
+import { Application, ColorMatrixFilter, Container, Graphics, Rectangle, Sprite, UPDATE_PRIORITY, type Texture } from 'pixi.js';
 import { lightGrade } from './lighting';
 import { fadeTexture, glowTexture, makeLightRays, makeStar, moteTexture, type FxView } from './proceduralFx';
-import { atmosphere, RENDER_STYLE, type RenderStyle } from './atmosphere';
+import { atmosphere, backgroundGrade, hasBackgroundGrade, RENDER_STYLE, type RenderStyle } from './atmosphere';
 import { QUALITY, qualityResolution, type RenderQuality } from './quality';
 import { FrameRecorder } from '../perf/frameStats';
 
@@ -96,6 +96,14 @@ export class AquariumRenderer {
   private atmosBottom: Sprite | null = null;
   private atmosWarm: Sprite | null = null;
   private atmosCool: Sprite | null = null;
+  /** 감정 배경(atmos-2): 배경 그림 한 장. 감정 색감은 필터 결과를 텍스처로 한 번 구워(generateTexture) 바꿔 끼우므로 매 프레임 필터 비용이 없다 */
+  private bgSprite: Sprite | null = null;
+  private bgRaw: Texture | null = null;
+  private bgGraded: Texture | null = null;
+  private bgGrade = new ColorMatrixFilter();
+  private bgGradeKey = '';
+  /** 변화 큼일 때 따뜻한/차가운 보조 빛이 번갈아 오가는 움직임(실시간 화면만, 정지 그림·움직임 줄이기에선 멈춤) */
+  private glowBase = { warm: 0, cool: 0, swing: 0 };
   private motes: Array<{ s: Sprite; warm: boolean; vx: number; vy: number; phase: number; base: number }> = [];
   private moteTarget = { count: 0, warmShare: 0.5, warmColor: 0xffffff, coolColor: 0xffffff, speed: 1 };
   /** 어항 FPS: PixiJS가 실제로 화면을 그린 프레임 시각(그리기 뒤 UTILITY 우선순위에서 기록) */
@@ -251,10 +259,41 @@ export class AquariumRenderer {
     this.atmosCool = cool;
   }
 
+  /**
+   * 감정 배경 색감(atmos-2만). 저사양에서도 그대로 둔다: 필터 결과를 그림 크기 텍스처로 한 번 구워(generateTexture)
+   * 배경 스프라이트에 바꿔 끼우므로, 감정이 바뀔 때만 한 번 그리고 매 프레임 비용은 없다.
+   */
+  private applyBackgroundGrade(state: TankState) {
+    const on = hasBackgroundGrade(this.renderStyle);
+    const g = on ? backgroundGrade({ temp: state.light.temp, energy: state.light.energy, spread: this.opts.moodSpread ?? 0 }) : null;
+    const key = g && g.strength > 0 ? g.matrix.map((v) => v.toFixed(4)).join(',') : 'off';
+    if (key === this.bgGradeKey) return;
+    this.bgGradeKey = key;
+    const sprite = this.bgSprite;
+    const raw = this.bgRaw;
+    if (!sprite || !raw) return;
+    const old = this.bgGraded;
+    this.bgGraded = null;
+    if (g && g.strength > 0) {
+      this.bgGrade.matrix = g.matrix as unknown as ColorMatrixFilter['matrix'];
+      const src = new Sprite(raw);
+      src.filters = [this.bgGrade];
+      this.bgGraded = this.app.renderer.generateTexture({ target: src, frame: new Rectangle(0, 0, raw.width, raw.height), resolution: 1 });
+      src.destroy();
+      sprite.texture = this.bgGraded;
+    } else {
+      sprite.texture = raw;
+    }
+    sprite.width = WORLD.width;
+    sprite.height = WORLD.height;
+    old?.destroy(true);
+  }
+
   /** 감정 분위기: 생물 뒤 물색 덧칠 + 보조 빛 + 입자 목표. v0이면 끈다 */
   private drawAtmosphere(state: TankState) {
     const on = this.renderStyle !== 'v0';
     this.layers.atmos.visible = on;
+    this.applyBackgroundGrade(state);
     if (!on) {
       this.moteTarget.count = 0;
       for (const m of this.motes) m.s.destroy();
@@ -267,6 +306,7 @@ export class AquariumRenderer {
     set(this.atmosBottom, a.waterBottom);
     set(this.atmosWarm, a.glowWarm);
     set(this.atmosCool, a.glowCool);
+    this.glowBase = { warm: a.glowWarm.alpha, cool: a.glowCool.alpha, swing: hasBackgroundGrade(this.renderStyle) ? a.contrast : 0 };
     this.moteTarget = {
       count: Math.round(QUALITY[this.quality].maxParticles * a.particles.density),
       warmShare: a.particles.warmShare,
@@ -430,13 +470,18 @@ export class AquariumRenderer {
 
   private drawTheme(themeId: string) {
     this.layers.background.removeChildren();
+    this.bgSprite = null;
+    this.bgRaw = null;
     const bg = this.tex(`theme:${themeId}:background`);
     if (bg) {
       const s = new Sprite(bg);
       s.width = WORLD.width;
       s.height = WORLD.height;
       this.layers.background.addChild(s);
+      this.bgSprite = s;
+      this.bgRaw = bg;
     }
+    this.bgGradeKey = ''; // 그림이 바뀌었으니 색감 텍스처를 다시 만든다
     const floor = this.tex(`theme:${themeId}:floor`);
     if (floor) {
       const f = new Sprite(floor);
@@ -588,7 +633,17 @@ export class AquariumRenderer {
     for (const fx of this.fxViews.values()) fx.tick(this.time, calm);
     if (!rm) this.tickBubbles(dt);
     this.tickMotes(dt, rm);
+    this.tickSwingGlow(rm);
     if (this.wipe) this.tickWipe(dt);
+  }
+
+  /** 변화 큼: 따뜻한 빛과 차가운 빛이 10초 주기로 번갈아 세졌다 약해진다(감정이 오가는 느낌). 대비가 없으면 그대로 */
+  private tickSwingGlow(reducedMotion: boolean) {
+    const k = this.glowBase.swing;
+    if (!this.atmosWarm || !this.atmosCool || k <= 0) return;
+    const w = reducedMotion ? 0 : Math.sin((this.time / 10) * Math.PI * 2) * 0.45 * k;
+    this.atmosWarm.alpha = this.glowBase.warm * (1 + w);
+    this.atmosCool.alpha = this.glowBase.cool * (1 - w);
   }
 
   private tickBubbles(dt: number) {

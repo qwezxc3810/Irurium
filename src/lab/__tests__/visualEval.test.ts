@@ -5,7 +5,7 @@ import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios'
 import { TankSession } from '../../engine/session';
 import manifest from '../../../public/assets/manifest.json';
 import {
-  autoDistinct, autoMetrics, blindPair, canStartEvaluation, chipsFor, REVEAL_FRESH_MS, REVEAL_HEARTBEAT_MS, compareRows, countedSessions, exclusionReason, formatV1Report, humanSummary, isBlindBreach, newSession,
+  autoDistinct, autoMetrics, blindPair, canStartEvaluation, chipsFor, REVEAL_FRESH_MS, REVEAL_HEARTBEAT_MS, compareRows, countedSessions, guessMatrix, exclusionReason, formatV1Report, humanSummary, isBlindBreach, newSession,
   sessionProblems,
   parseSessions, runVisualSet, shuffleOrder, v1Verdict, V1_CRITERIA, VE_DAYS, vePairs, veTanks,
   type VeAnswer, type VeSession,
@@ -284,11 +284,37 @@ describe('렌더링 버전 구분 (분위기 렌더링 실험)', () => {
     expect(exclusionReason(legacy[0]!, 'atmos-1')).toContain('다른 렌더링(v0)');
   });
 
-  it('새 세션은 지금 기본 렌더링(atmos-1)을 기록하고, 렌더링 버전 형식이 틀리면 거부', () => {
+  it('새 세션은 지금 기본 렌더링(atmos-2)을 기록하고, 렌더링 버전 형식이 틀리면 거부', () => {
     const s = fakeSession('a', 'human', perfect);
-    expect(s.renderStyle).toBe('atmos-1');
+    expect(s.renderStyle).toBe('atmos-2');
+    expect(sessionProblems({ ...s, renderStyle: 'atmos-1' })).toEqual([]); // 지난 실험 결과도 계속 읽는다
     expect(sessionProblems({ ...s, renderStyle: 'neon' }).join()).toContain('렌더링 버전');
     expect(formatV1Report(set, [], 'v0')).toContain('렌더링 v0');
   });
 });
 
+describe('감정 배경 실험(atmos-2): 렌더링별 분리와 답 분포', () => {
+  it('atmos-1 세션과 atmos-2 세션은 서로의 판정에 섞이지 않는다', () => {
+    const a1 = ['a', 'b', 'c', 'd', 'e'].map((x) => ({ ...fakeSession(x, 'human', perfect), renderStyle: 'atmos-1' as const }));
+    expect(countedSessions(a1, 'atmos-1').length).toBe(5);
+    expect(countedSessions(a1, 'atmos-2').length).toBe(0);
+    expect(v1Verdict(a1, 'atmos-2').verdict).toBe('hold');
+  });
+
+  it('답 분포: 실제 감정 × 고른 답, 좌우는 보여 준 순서로 채점, 모르겠어요도 센다', () => {
+    const sessions = ['a', 'b', 'c', 'd', 'e'].map((x) => fakeSession(x, 'human', perfect));
+    const gm = guessMatrix(sessions);
+    const total = (r: Record<string, number>) => Object.values(r).reduce((a, b) => a + b, 0);
+    // 정답대로 답하면 대각선만 찬다
+    for (const k of ['warm', 'cool', 'swing'] as const) {
+      expect(gm[k][k]).toBe(total(gm[k]));
+      expect(gm[k].unsure).toBe(0);
+    }
+    // 감정·시드 쌍 어항 수 = (감정 쌍 9 + 시드 쌍 9) × 2쪽 × 5명
+    expect(total(gm.warm) + total(gm.cool) + total(gm.swing)).toBe(18 * 2 * 5);
+    const unsure = ['a', 'b', 'c', 'd', 'e'].map((x) => fakeSession(x, 'human', (p, sw) => ({ ...perfect(p, sw), emotionLeft: 'unsure', emotionRight: 'unsure' })));
+    const gu = guessMatrix(unsure);
+    expect(gu.cool.unsure).toBe(total(gu.cool));
+    expect(formatV1Report(set, sessions, 'atmos-2')).toContain('감정 맞히기 답 분포');
+  });
+});
