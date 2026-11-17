@@ -114,6 +114,12 @@ describe('감정 분위기(렌더링 전용)', () => {
       expect(moodSpreadOf(trail, day(1))).toBe(0); // 2일 기록은 미래
       expect(moodSpreadOf(trail, 'not-a-date')).toBe(0);
     });
+
+    it('없는 날짜(2026-02-31 등)는 기준일로도, 기록 날짜로도 쓰지 않는다', () => {
+      expect(moodSpreadOf([{ date: '2026-02-27', temp: 0.5 }, { date: '2026-02-28', temp: -0.5 }], '2026-02-31')).toBe(0);
+      expect(moodSpreadOf([{ date: '2026-02-30', temp: 0.9 }, { date: '2026-03-01', temp: 0.1 }, { date: '2026-03-02', temp: 0.1 }], '2026-03-02')).toBe(0);
+      expect(moodSpreadOf([{ date: '2024-02-29', temp: 0.5 }, { date: '2024-03-01', temp: -0.5 }], '2024-03-01')).toBeCloseTo(0.5); // 윤년은 정상
+    });
   });
 });
 

@@ -91,10 +91,15 @@ function mix(colors: Array<[number, number]>): number {
   return (Math.round(r / w) << 16) | (Math.round(g / w) << 8) | Math.round(b / w);
 }
 
-/** 'YYYY-MM-DD' → 달력 일수(UTC 기준 정수). 형식이 틀리면 NaN */
+/** 'YYYY-MM-DD' → 달력 일수(UTC 기준 정수). 형식이 틀리거나 없는 날짜(2026-02-31 등)면 NaN */
 function dayNumber(iso: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  return m ? Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!) / 86_400_000 : NaN;
+  if (!m) return NaN;
+  const [y, mo, d] = [+m[1]!, +m[2]!, +m[3]!];
+  const t = new Date(Date.UTC(y, mo - 1, d));
+  // Date.UTC는 없는 날짜를 다음 달로 넘기므로, 되돌려 읽은 연·월·일이 같은지 확인한다
+  if (t.getUTCFullYear() !== y || t.getUTCMonth() !== mo - 1 || t.getUTCDate() !== d) return NaN;
+  return t.getTime() / 86_400_000;
 }
 
 /**
