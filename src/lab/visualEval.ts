@@ -462,7 +462,7 @@ export function guessMatrix(sessions: VeSession[], tanks: VeTank[] = veTanks(), 
 
 /** 판정 기준(초안). 기획자가 실제 평가를 보고 확정한다 */
 export const V1_CRITERIA = {
-  minEvaluators: 5, // 기존 계획(짝짓기 테스트 지인 5명 이상)과 같게
+  minEvaluators: 3, // 기획자 결정(2026-11-17): 빠른 반복을 위해 5명 → 3명. 표본이 작아 판정이 흔들릴 수 있음
   emotionDifferentRate: 0.7,
   diffGap: 1.0,
   emotionGuessRate: 0.5,
@@ -568,7 +568,7 @@ export function formatV1Report(set: VeSet, sessions: VeSession[], style: RenderS
     for (const r of rows) L.push(`| ${r.day}일 | ${n2(r.humanEmotionDiff)} | ${n2(r.humanSeedDiff)} | ${pct(r.humanEmotionDifferentRate)} | ${pct(r.humanEmotionGuess)} |`);
     const gm = guessMatrix(sessions, set.tanks, style);
     L.push('');
-    L.push('### 감정 맞히기 답 분포 (실제 감정 × 고른 답, 감정·시드 쌍의 어항 모두)');
+    L.push('### 감정 맞히기 답 분포 (실제 감정 × 고른 답, 감정·시드 쌍의 어항 모두 — 판정의 감정 맞힌 비율(감정 쌍만)과 분모가 달라요)');
     L.push('| 실제 감정 | 따뜻함 | 차가움 | 들쑥날쑥 | 모르겠어요 |');
     L.push('|---|---|---|---|---|');
     for (const k of ['warm', 'cool', 'swing'] as const) L.push(`| ${GUESS_LABEL[k]} | ${gm[k].warm} | ${gm[k].cool} | ${gm[k].swing} | ${gm[k].unsure} |`);

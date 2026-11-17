@@ -323,7 +323,7 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
                 <thead><tr><th>실제 감정 \ 고른 답</th><th>따뜻함</th><th>차가움</th><th>들쑥날쑥</th><th>모르겠어요</th></tr></thead>
                 <tbody>{(['warm', 'cool', 'swing'] as const).map((k) => <tr key={k}><td>{EMOTION_LABEL[k]}</td><td>{gm[k].warm}</td><td>{gm[k].cool}</td><td>{gm[k].swing}</td><td>{gm[k].unsure}</td></tr>)}</tbody>
               </table>
-              <p className="hint">감정 맞히기 답 분포예요(감정 쌍·시드 쌍의 어항 모두, 대조 쌍 제외). '모르겠어요'가 많은지, 어떤 감정과 헷갈리는지 봐요.</p>
+              <p className="hint">감정 맞히기 답 분포예요(감정 쌍·시드 쌍의 어항 모두, 대조 쌍 제외). 판정의 '감정 맞힌 비율'은 감정 쌍만 세서 분모가 달라요. '모르겠어요'가 많은지, 어떤 감정과 헷갈리는지 봐요.</p>
             </div>
           );
         })()}

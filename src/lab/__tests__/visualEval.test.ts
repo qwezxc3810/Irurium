@@ -126,9 +126,11 @@ describe('사람 평가: 실제 평가 없이는 통과하지 않는다', () => 
     const partial = fakeSession('bb', 'human', perfect, false);
     expect(countedSessions([one, one, partial]).length).toBe(1);
     expect(v1Verdict([one, one, partial]).verdict).toBe('hold');
-    expect(V1_CRITERIA.minEvaluators).toBe(5);
-    const four = ['a', 'bb', 'ccc', 'dddd'].map((id) => fakeSession(id, 'human', perfect));
-    expect(v1Verdict(four).verdict).toBe('hold');
+    expect(V1_CRITERIA.minEvaluators).toBe(3);
+    const two = ['a', 'bb'].map((id) => fakeSession(id, 'human', perfect));
+    expect(v1Verdict(two).verdict).toBe('hold');
+    const three = ['a', 'bb', 'ccc'].map((id) => fakeSession(id, 'human', perfect));
+    expect(v1Verdict(three).verdict).toBe('pass');
   });
 
   it('집계 계산 확인(사람 출처로 표시한 테스트 응답 5개): 정답대로 답하면 통과, 구별 못 하면 조정 필요', () => {
