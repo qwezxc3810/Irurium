@@ -4,7 +4,7 @@ import { seedFromString } from '../engine/random';
 import type { TankConfig, TankState } from '../engine/types';
 import { compositionDistance, layoutDistance, lightDistance, mean, moodCompositionDistance } from './metrics';
 import { frameAt, runTank } from './runner';
-import { atmosphere, compositeWater, RENDER_STYLE, type RenderStyle } from '../render/atmosphere';
+import { applyBackgroundGrade, atmosphere, backgroundGrade, compositeWater, hasBackgroundGrade, RENDER_STYLE, RENDER_STYLES, type RenderStyle } from '../render/atmosphere';
 import { gradedWater } from '../render/lighting';
 import { WATER } from './metrics';
 import { SAMPLE_PREFIX, type RunResult, type SampleTank, type ScriptedEntry } from './types';
@@ -315,7 +315,7 @@ export function sessionProblems(x: unknown): string[] {
   }
   if (s.completedAt && answered.size !== known.size) errs.push(`완료로 표시됐지만 ${answered.size}/${known.size}쌍만 답했어요`);
   if (s.blindBreach !== undefined && typeof s.blindBreach !== 'boolean') errs.push('블라인드 위반 표시 형식이 틀려요');
-  if (s.renderStyle !== undefined && s.renderStyle !== 'v0' && s.renderStyle !== 'atmos-1') errs.push('렌더링 버전 형식이 틀려요');
+  if (s.renderStyle !== undefined && !RENDER_STYLES.includes(s.renderStyle)) errs.push('렌더링 버전 형식이 틀려요');
   return errs;
 }
 
@@ -437,9 +437,32 @@ export function humanSummary(sessions: VeSession[], tanks: VeTank[] = veTanks(),
   return cells;
 }
 
+/**
+ * 감정 맞히기 답 분포: 실제 감정(행) × 고른 답(열) 개수. 감정 쌍·시드 쌍의 양쪽 어항을 모두 센다(대조 쌍 제외).
+ * '잘 모르겠어요'가 많은지, 어떤 감정과 헷갈리는지 보는 용도. 좌우는 실제로 보여 준 순서(order)로 정한다.
+ */
+export type GuessMatrix = Record<EmotionKind, Record<EmotionGuess, number>>;
+
+export function guessMatrix(sessions: VeSession[], tanks: VeTank[] = veTanks(), style: RenderStyle = RENDER_STYLE): GuessMatrix {
+  const zero = (): Record<EmotionGuess, number> => ({ warm: 0, cool: 0, swing: 0, unsure: 0 });
+  const out: GuessMatrix = { warm: zero(), cool: zero(), swing: zero() };
+  const pairs = new Map(vePairs().map((p) => [p.id, p]));
+  for (const s of countedSessions(sessions, style)) {
+    const order = new Map(s.order.map((o) => [o.pairId, o.swap]));
+    for (const a of s.answers) {
+      const p = pairs.get(a.pairId)!;
+      if (p.kind === 'control') continue;
+      const swap = order.get(a.pairId)!;
+      out[truthOf({ tanks }, swap ? p.b : p.a)][a.emotionLeft]++;
+      out[truthOf({ tanks }, swap ? p.a : p.b)][a.emotionRight]++;
+    }
+  }
+  return out;
+}
+
 /** 판정 기준(초안). 기획자가 실제 평가를 보고 확정한다 */
 export const V1_CRITERIA = {
-  minEvaluators: 5, // 기존 계획(짝짓기 테스트 지인 5명 이상)과 같게
+  minEvaluators: 3, // 기획자 결정(2026-11-17): 빠른 반복을 위해 5명 → 3명. 표본이 작아 판정이 흔들릴 수 있음
   emotionDifferentRate: 0.7,
   diffGap: 1.0,
   emotionGuessRate: 0.5,
@@ -543,6 +566,12 @@ export function formatV1Report(set: VeSet, sessions: VeSession[], style: RenderS
     L.push('| 날짜 | 감정 쌍 차이 점수 | 시드 쌍 차이 점수 | 감정 쌍을 다른 기록으로 본 비율 | 감정 맞힌 비율 |');
     L.push('|---|---|---|---|---|');
     for (const r of rows) L.push(`| ${r.day}일 | ${n2(r.humanEmotionDiff)} | ${n2(r.humanSeedDiff)} | ${pct(r.humanEmotionDifferentRate)} | ${pct(r.humanEmotionGuess)} |`);
+    const gm = guessMatrix(sessions, set.tanks, style);
+    L.push('');
+    L.push('### 감정 맞히기 답 분포 (실제 감정 × 고른 답, 감정·시드 쌍의 어항 모두 — 판정의 감정 맞힌 비율(감정 쌍만)과 분모가 달라요)');
+    L.push('| 실제 감정 | 따뜻함 | 차가움 | 들쑥날쑥 | 모르겠어요 |');
+    L.push('|---|---|---|---|---|');
+    for (const k of ['warm', 'cool', 'swing'] as const) L.push(`| ${GUESS_LABEL[k]} | ${gm[k].warm} | ${gm[k].cool} | ${gm[k].swing} | ${gm[k].unsure} |`);
   }
   L.push('');
   L.push(`## 판정: ${V1_VERDICT_LABEL[v.verdict]}`);
@@ -563,16 +592,19 @@ export interface WaterGap {
 }
 
 export function waterColorOf(state: TankState, spread: number, style: RenderStyle): [number, number, number] {
-  const graded = gradedWater(WATER, state.light);
+  const mood = { temp: state.light.temp, energy: state.light.energy, spread };
+  // atmos-2: 배경 그림 색감을 먼저 바꾸고(감정 배경), 그 위에 기존 조명·물색 덧칠
+  const base = hasBackgroundGrade(style) ? applyBackgroundGrade(WATER, backgroundGrade(mood)) : WATER;
+  const graded = gradedWater(base, state.light);
   if (style === 'v0') return graded;
   const hex = (graded[0] << 16) | (graded[1] << 8) | graded[2];
-  return compositeWater(hex, atmosphere({ temp: state.light.temp, energy: state.light.energy, spread }));
+  return compositeWater(hex, atmosphere(mood));
 }
 
 export function waterGaps(set: VeSet): WaterGap[] {
   const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
   const out: WaterGap[] = [];
-  for (const style of ['v0', 'atmos-1'] as RenderStyle[]) {
+  for (const style of [...RENDER_STYLES].reverse()) {
     for (const day of VE_DAYS) {
       const gap = (kind: PairKind) => mean(set.pairs.filter((p) => p.day === day && p.kind === kind).map((p) =>
         dist(waterColorOf(set.state(p.a, day), set.spread(p.a, day), style), waterColorOf(set.state(p.b, day), set.spread(p.b, day), style))));

@@ -5,7 +5,7 @@ import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios'
 import { seedFromString } from '../../engine/random';
 import { TankSession } from '../../engine/session';
 import { runVisualSet, waterGaps } from '../../lab/visualEval';
-import { atmosphere, MAX_FILTER_ALPHA, MAX_GLOW_ALPHA, MAX_WATER_ALPHA, MIN_FILTER_LUMA, moodSpreadOf, RENDER_STYLE, SPREAD_FULL, SPREAD_START, TEMP_FULL } from '../atmosphere';
+import { applyBackgroundGrade, atmosphere, backgroundGrade, hasBackgroundGrade, MAX_FILTER_ALPHA, MAX_GLOW_ALPHA, MAX_WATER_ALPHA, MIN_FILTER_LUMA, moodSpreadOf, RENDER_STYLE, SPREAD_FULL, SPREAD_START, TEMP_FULL } from '../atmosphere';
 import { QUALITY } from '../quality';
 import rendererSource from '../AquariumRenderer.ts?raw';
 
@@ -142,8 +142,8 @@ describe('렌더러 연결과 보호', () => {
     expect(atmosphere.length).toBe(1);
   });
 
-  it('기본 렌더링은 분위기(atmos-1), 엔진 버전·골든 해시는 그대로', () => {
-    expect(RENDER_STYLE).toBe('atmos-1');
+  it('기본 렌더링은 감정 배경(atmos-2), 엔진 버전·골든 해시는 그대로', () => {
+    expect(RENDER_STYLE).toBe('atmos-2');
     expect(ENGINE_VERSION).toBe('0.2.0');
     expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe(GOLDEN_REPLAY[ENGINE_VERSION]);
   });
@@ -153,9 +153,64 @@ describe('렌더러 연결과 보호', () => {
     for (const day of [14, 100, 200] as const) {
       const v0 = g.find((x) => x.day === day && x.style === 'v0')!;
       const at = g.find((x) => x.day === day && x.style === 'atmos-1')!;
+      const a2 = g.find((x) => x.day === day && x.style === 'atmos-2')!;
       expect(at.emotionMean).toBeGreaterThan(v0.emotionMean); // 자동 참고값: 커지기만 확인(사람 평가로 판단)
+      expect(a2.emotionMean).toBeGreaterThan(at.emotionMean);
       expect(at.seedMean).toBe(0);
+      expect(a2.seedMean).toBe(0);
       expect(v0.seedMean).toBe(0);
     }
+  });
+});
+
+describe('감정 배경 색감(atmos-2, 렌더링 전용)', () => {
+  const WATER: [number, number, number] = [5, 59, 115]; // 배경 그림 평균색
+  const hue = (c: [number, number, number]) => c[0] - c[2];
+
+  it('감정이 없으면 원래 배경 그대로(항등 행렬)', () => {
+    const g = backgroundGrade({ temp: 0, energy: 0, spread: 0 });
+    expect(g.strength).toBe(0);
+    expect(applyBackgroundGrade(WATER, g)).toEqual(WATER);
+  });
+
+  it('따뜻함은 붉은 쪽, 차가움은 채도 낮은 청색, 변화 큼은 둘 사이의 해 질 녘 색', () => {
+    const w = applyBackgroundGrade(WATER, backgroundGrade({ temp: 0.6, energy: 0.4, spread: 0.05 }));
+    const c = applyBackgroundGrade(WATER, backgroundGrade({ temp: -0.25, energy: -0.4, spread: 0.05 }));
+    const s = applyBackgroundGrade(WATER, backgroundGrade({ temp: 0.05, energy: 0.1, spread: SPREAD_FULL }));
+    expect(hue(w)).toBeGreaterThan(0);
+    expect(hue(c)).toBeLessThan(0);
+    expect(hue(s)).toBeGreaterThan(hue(c));
+    expect(hue(s)).toBeLessThan(hue(w));
+    // 세 감정의 배경색이 서로 충분히 다르다(RGB 거리 40 이상, 자동 참고값)
+    const d = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+    expect(Math.min(d(w, c), d(w, s), d(c, s))).toBeGreaterThan(40);
+  });
+
+  it('너무 어둡지 않다: 감정 배경의 평균 밝기가 원래 배경보다 낮지 않다', () => {
+    const luma = (c: number[]) => 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
+    for (const m of [{ temp: 0.6, energy: 0.4, spread: 0 }, { temp: -0.3, energy: -0.5, spread: 0 }, { temp: 0, energy: 0, spread: SPREAD_FULL }]) {
+      expect(luma(applyBackgroundGrade(WATER, backgroundGrade(m)))).toBeGreaterThanOrEqual(luma(WATER));
+    }
+  });
+
+  it('연속적이다: 감정 온도를 조금 바꾸면 색도 조금만 바뀐다', () => {
+    let prev = applyBackgroundGrade(WATER, backgroundGrade({ temp: -0.5, energy: 0, spread: 0 }));
+    for (let t = -0.49; t <= 0.5; t += 0.01) {
+      const cur = applyBackgroundGrade(WATER, backgroundGrade({ temp: t, energy: 0, spread: 0 }));
+      expect(Math.hypot(cur[0] - prev[0], cur[1] - prev[1], cur[2] - prev[2])).toBeLessThan(12);
+      prev = cur;
+    }
+  });
+
+  it('배경 그림 한 장에만 걸고, 결과를 텍스처로 저장해 저사양에서도 유지한다', () => {
+    expect(rendererSource).toMatch(/this\.bgSprite = s;/);
+    expect(rendererSource).toMatch(/generateTexture\(\{ target: src/);
+    expect(rendererSource).not.toMatch(/colorGrade[^\n]*bgGrade/);
+    expect(hasBackgroundGrade('atmos-2')).toBe(true);
+    expect(hasBackgroundGrade('atmos-1')).toBe(false);
+  });
+
+  it('변화 큼의 빛 오감은 움직임 줄이기에서 멈춘다', () => {
+    expect(rendererSource).toMatch(/const w = reducedMotion \? 0 :/);
   });
 });
