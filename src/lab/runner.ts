@@ -72,7 +72,7 @@ export function runTank(t: SampleTank, origin: DataOrigin = 'sample'): RunResult
       lifecycle: s.lifecycle,
       progress: s.displayProgress(),
       lightUsed: head.ledger.dayLightShift.date === date ? head.ledger.dayLightShift.used : 0,
-      moodSpread: moodSpreadOf(head.ledger.moodTrail),
+      moodSpread: moodSpreadOf(head.ledger.moodTrail, date),
       metrics: frameMetrics(head.state),
     });
   }

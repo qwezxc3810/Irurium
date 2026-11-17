@@ -91,9 +91,27 @@ function mix(colors: Array<[number, number]>): number {
   return (Math.round(r / w) << 16) | (Math.round(g / w) << 8) | Math.round(b / w);
 }
 
-/** 최근 감정 이력(최대 days일) 온도의 표준편차 */
-export function moodSpreadOf(trail: ReadonlyArray<{ temp: number }>, days = 14): number {
-  const xs = trail.slice(-days).map((d) => d.temp).filter((x) => Number.isFinite(x));
+/** 'YYYY-MM-DD' → 달력 일수(UTC 기준 정수). 형식이 틀리면 NaN */
+function dayNumber(iso: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!) / 86_400_000 : NaN;
+}
+
+/**
+ * 최근 감정 흔들림: 기준 날짜 asOf를 포함한 최근 days개 **달력 날짜**(asOf-days+1 ~ asOf) 안의 감정 온도 표준편차.
+ * - 기록 개수가 아니라 날짜로 자른다. 오래 쉬었다 돌아온 사용자의 옛 감정이 최근 분위기로 섞이지 않는다.
+ * - 기록이 없는 날은 중립(0)으로 채우지 않고 **미관측**으로 빼고 계산한다.
+ * - 같은 날 여러 번 기록은 엔진(mergeMoodTrail)이 이미 하루 1개로 합쳐 둔다.
+ * - asOf보다 뒤 날짜 기록은 쓰지 않는다. 창 안 기록이 2개 미만이면 0(흔들림 없음).
+ */
+export function moodSpreadOf(trail: ReadonlyArray<{ date: string; temp: number }>, asOf: string, days = 14): number {
+  const end = dayNumber(asOf);
+  if (!Number.isFinite(end)) return 0;
+  const start = end - days + 1;
+  const xs = trail
+    .filter((d) => { const n = dayNumber(d.date); return n >= start && n <= end; })
+    .map((d) => d.temp)
+    .filter((x) => Number.isFinite(x));
   if (xs.length < 2) return 0;
   const m = xs.reduce((s, x) => s + x, 0) / xs.length;
   return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / xs.length);

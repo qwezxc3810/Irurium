@@ -152,7 +152,7 @@ export function userRun(d: Readonly<SessionData>): RunResult {
       lifecycle,
       progress: head.ledger.maxProgress,
       lightUsed: head.ledger.dayLightShift.date === date ? head.ledger.dayLightShift.used : 0,
-      moodSpread: moodSpreadOf(head.ledger.moodTrail),
+      moodSpread: moodSpreadOf(head.ledger.moodTrail, date),
       metrics: frameMetrics(head.state),
     });
   }

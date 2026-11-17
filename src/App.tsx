@@ -73,7 +73,7 @@ export function App() {
   const moss = s.moss(today);
   const { quality, status: qualityStatus } = useAutoQuality(canvas, qualityPref, autoKey);
   // 감정 분위기 렌더링: 최근 감정 이력의 흔들림(원장에서 읽기만 함)
-  const moodSpread = useMemo(() => moodSpreadOf(head.ledger.moodTrail), [head]);
+  const moodSpread = useMemo(() => moodSpreadOf(head.ledger.moodTrail, today), [head, today]);
   const options = useMemo<RenderOptions>(() => ({ mossStage: moss.stage, reducedMotion, moodSpread }), [moss.stage, reducedMotion, moodSpread]);
   const invariantErrors = s.checkInvariants({ deep: false });
 

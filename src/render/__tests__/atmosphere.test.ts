@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ENGINE_VERSION } from '../../engine/config';
 import { GOLDEN_REPLAY } from '../../engine/__tests__/golden';
 import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios';
+import { seedFromString } from '../../engine/random';
 import { TankSession } from '../../engine/session';
 import { runVisualSet, waterGaps } from '../../lab/visualEval';
 import { atmosphere, MAX_FILTER_ALPHA, MAX_GLOW_ALPHA, MAX_WATER_ALPHA, MIN_FILTER_LUMA, moodSpreadOf, RENDER_STYLE, SPREAD_FULL, SPREAD_START, TEMP_FULL } from '../atmosphere';
@@ -67,11 +68,52 @@ describe('감정 분위기(렌더링 전용)', () => {
     expect(atmosphere({ temp: NaN, energy: NaN, spread: NaN }).waterTop.alpha).toBeGreaterThan(0);
   });
 
-  it('감정 이력 흔들림은 최근 14일 온도의 표준편차', () => {
-    expect(moodSpreadOf([])).toBe(0);
-    expect(moodSpreadOf([{ temp: 0.5 }, { temp: 0.5 }])).toBe(0);
-    expect(moodSpreadOf([{ temp: 0.5 }, { temp: -0.5 }])).toBeCloseTo(0.5);
-    expect(moodSpreadOf([...Array(30).fill({ temp: 1 }), ...Array(14).fill({ temp: 0 })])).toBe(0);
+  describe('감정 흔들림(moodSpreadOf): 최근 14 달력일 기준', () => {
+    // 2026-03-01부터 n일째 날짜
+    const day = (n: number) => new Date(Date.UTC(2026, 2, 1 + n)).toISOString().slice(0, 10);
+    const rec = (n: number, temp: number) => ({ date: day(n), temp });
+
+    it('기본: 비어 있거나 하나뿐이면 0, 표준편차 계산', () => {
+      expect(moodSpreadOf([], day(0))).toBe(0);
+      expect(moodSpreadOf([rec(0, 0.5)], day(0))).toBe(0);
+      expect(moodSpreadOf([rec(0, 0.5), rec(1, -0.5)], day(1))).toBeCloseTo(0.5);
+    });
+
+    it('매일 기록: 기준일 포함 최근 14일만 쓴다(15일 전은 빠짐)', () => {
+      const trail = [...Array.from({ length: 30 }, (_, i) => rec(i, 1)), ...Array.from({ length: 14 }, (_, i) => rec(30 + i, 0))];
+      expect(moodSpreadOf(trail, day(43))).toBe(0); // 30~43일: 모두 0
+      expect(moodSpreadOf(trail, day(44))).toBe(0); // 31~44일: 여전히 0
+      expect(moodSpreadOf(trail, day(42))).toBeGreaterThan(0); // 29~42일: 29일의 1이 섞임
+    });
+
+    it('7일 공백: 기록 없는 날은 중립으로 채우지 않고 빼고 계산한다', () => {
+      const trail = [rec(0, 0.4), rec(1, 0.4), rec(9, 0.4), rec(10, 0.4)];
+      expect(moodSpreadOf(trail, day(10))).toBe(0); // 0으로 채웠다면 흔들림이 생겼을 것
+    });
+
+    it('30일 공백 뒤 복귀: 오래전 감정은 최근 분위기에 섞이지 않는다', () => {
+      const old = Array.from({ length: 13 }, (_, i) => rec(i, i % 2 ? 0.7 : -0.3)); // 크게 흔들리던 옛 기록
+      const back = [rec(45, 0.5), rec(46, 0.5)];
+      const trail = [...old, ...back];
+      expect(moodSpreadOf(old, day(12))).toBeGreaterThan(0.4);
+      expect(moodSpreadOf(trail, day(46))).toBe(0); // 기록 개수로 자르면 옛 기록 12개가 섞였을 것
+      expect(moodSpreadOf(trail, day(45))).toBe(0); // 창 안 기록 1개 → 0
+    });
+
+    it('같은 날 여러 번 기록: 엔진이 하루 1개로 합쳐 두므로 하루 안의 감정 차이는 흔들림이 아니다', () => {
+      const s = new TankSession({ tankId: 't', seed: seedFromString('spread'), themeId: 'starlit-desert', goal: { type: 'free', totalUnits: null, dailyTarget: null }, startDate: '2026-11-13' });
+      let t = Date.UTC(2026, 10, 13);
+      ['따뜻함', '쓸쓸함', '설렘', '차분함'].forEach((chip, i) =>
+        s.addEntry({ clientId: `c${i}`, localDate: '2026-11-13', amount: 10, progressValue: (i + 1) * 10, moodChips: [chip], note: '' }, (t += 3_600_000)));
+      expect(s.head.ledger.moodTrail).toHaveLength(1);
+      expect(moodSpreadOf(s.head.ledger.moodTrail, '2026-11-13')).toBe(0);
+    });
+
+    it('기준일보다 뒤 기록과 잘못된 기준일은 쓰지 않는다', () => {
+      const trail = [rec(0, 0.5), rec(1, 0.5), rec(2, -0.5)];
+      expect(moodSpreadOf(trail, day(1))).toBe(0); // 2일 기록은 미래
+      expect(moodSpreadOf(trail, 'not-a-date')).toBe(0);
+    });
   });
 });
 
