@@ -104,6 +104,8 @@ export interface DayFrame {
   progress: number;
   /** 그날 조명이 움직인 비율(하루 상한 30%) */
   lightUsed: number;
+  /** 최근 14일 감정 이력 온도의 표준편차(분위기 렌더링용, 원장에서 읽기만 함) */
+  moodSpread: number;
   metrics: FrameMetrics;
 }
 

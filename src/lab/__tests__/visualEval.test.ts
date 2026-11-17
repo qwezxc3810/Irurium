@@ -60,7 +60,8 @@ describe('블라인드', () => {
   it('평가 화면에 넘기는 값에는 감정·쌍 종류·어항 이름이 없다', () => {
     const order = shuffleOrder(set.pairs, 42);
     const bp = blindPair(set, order, 0);
-    expect(Object.keys(bp).sort()).toEqual(['day', 'index', 'left', 'pairId', 'right']);
+    expect(Object.keys(bp).sort()).toEqual(['day', 'index', 'left', 'leftSpread', 'pairId', 'right', 'rightSpread']);
+    expect(typeof bp.leftSpread).toBe('number'); // 분위기 렌더링 입력은 숫자만
     // 쌍 id는 내부 식별자라 화면에 보이지 않게 쓴다(문구로 출력하지 않음). 상태 자체에는 감정 이름이 없다
     expect(JSON.stringify(bp.left)).not.toMatch(/warm|cool|swing|따뜻|차가/);
   });
@@ -269,6 +270,25 @@ describe('다중 탭 블라인드 (리뷰 반영)', () => {
 
   it('평가가 끝난 뒤에 결과를 연 것은 위반이 아니다', () => {
     expect(simulate([T + 700_000, T + 800_000], T, T + 600_000).breach).toBe(false);
+  });
+});
+
+describe('렌더링 버전 구분 (분위기 렌더링 실험)', () => {
+  it('렌더링 버전이 없는 예전 세션은 기존(v0) 판정에만 들어가고, 분위기(atmos-1) 판정과 섞이지 않는다', () => {
+    const ids = ['a', 'bb', 'ccc', 'dddd', 'eeeee'];
+    const legacy = ids.map((id) => { const s = fakeSession(id, 'human', perfect); delete (s as { renderStyle?: string }).renderStyle; return s; });
+    expect(countedSessions(legacy, 'v0').length).toBe(5);
+    expect(countedSessions(legacy, 'atmos-1').length).toBe(0);
+    expect(v1Verdict(legacy, 'v0').verdict).toBe('pass');
+    expect(v1Verdict(legacy, 'atmos-1').verdict).toBe('hold');
+    expect(exclusionReason(legacy[0]!, 'atmos-1')).toContain('다른 렌더링(v0)');
+  });
+
+  it('새 세션은 지금 기본 렌더링(atmos-1)을 기록하고, 렌더링 버전 형식이 틀리면 거부', () => {
+    const s = fakeSession('a', 'human', perfect);
+    expect(s.renderStyle).toBe('atmos-1');
+    expect(sessionProblems({ ...s, renderStyle: 'neon' }).join()).toContain('렌더링 버전');
+    expect(formatV1Report(set, [], 'v0')).toContain('렌더링 v0');
   });
 });
 

@@ -1,5 +1,6 @@
 import { computeFinale, computeSnapshot } from '../engine/compute';
 import { expectedInputHash, structureProblems } from '../engine/session';
+import { moodSpreadOf } from '../render/atmosphere';
 import { ENGINE_VERSION } from '../engine/config';
 import { addDays, daysBetween } from '../engine/dates';
 import { computeMoss } from '../engine/moss';
@@ -151,6 +152,7 @@ export function userRun(d: Readonly<SessionData>): RunResult {
       lifecycle,
       progress: head.ledger.maxProgress,
       lightUsed: head.ledger.dayLightShift.date === date ? head.ledger.dayLightShift.used : 0,
+      moodSpread: moodSpreadOf(head.ledger.moodTrail),
       metrics: frameMetrics(head.state),
     });
   }

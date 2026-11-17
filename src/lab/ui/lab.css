@@ -133,3 +133,8 @@ table.matrix td { text-align: center; }
 @media (max-width: 640px) { .ve-pair { grid-template-columns: 1fr; } }
 button.link { background: none; border: none; color: #2563eb; padding: 0; text-decoration: underline; cursor: pointer; font-size: 13px; }
 span.bad { color: var(--warn); font-size: 13px; }
+.ve-compare { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.ve-compare figure { margin: 0; }
+.ve-compare-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.ve-compare-row img { width: 100%; border-radius: 6px; display: block; }
+.thumb-wait { aspect-ratio: 5 / 3; background: #0b1f33; color: #9fb3c8; font-size: 12px; display: grid; place-items: center; border-radius: 6px; }

@@ -3,11 +3,13 @@ import { AquariumCanvas } from '../../ui/AquariumCanvas';
 import type { RenderOptions } from '../../render/AquariumRenderer';
 import {
   autoMetrics, blindPair, compareRows, countedSessions, EMOTION_LABEL, exclusionReason, isBlindBreach, canStartEvaluation, REVEAL_HEARTBEAT_MS, formatV1Report, GUESS_LABEL, newSession, PAIR_KIND_LABEL,
-  parseSessions, runVisualSet, SAME_LABEL, v1Verdict, V1_CRITERIA, V1_VERDICT_LABEL, VE_DAYS,
+  parseSessions, runVisualSet, SAME_LABEL, styleOf, v1Verdict, V1_CRITERIA, V1_VERDICT_LABEL, VE_DAYS, waterGaps,
   type EmotionGuess, type SameAnswer, type VeAnswer, type VeSession,
 } from '../visualEval';
 import { fmt } from '../metrics';
 import { OriginBadge } from './components';
+import { stills } from './stills';
+import { RENDER_STYLE, STYLE_LABEL, type RenderStyle } from '../../render/atmosphere';
 import { abandon, claim, KEY_CURRENT, KEY_OWNER, release, saveProgress, tabToken, viewFor } from '../visualEvalLock';
 
 /**
@@ -15,7 +17,7 @@ import { abandon, claim, KEY_CURRENT, KEY_OWNER, release, saveProgress, tabToken
  * 평가 중에는 어떤 감정·어떤 쌍인지 보여 주지 않는다. 결과는 이 기기 저장소에만 두고, 사람이 내보내서 모은다.
  */
 
-const OPTIONS: RenderOptions = { mossStage: 0, reducedMotion: false };
+const optionsFor = (moodSpread: number): RenderOptions => ({ mossStage: 0, reducedMotion: false, moodSpread });
 const KEY_DONE = 'irurium.visualEval.sessions';
 /** 정답 화면(결과 모으기·보기)을 마지막으로 연 시각. 평가 도중에 열렸으면 그 세션은 블라인드 위반 */
 const KEY_REVEALED = 'irurium.visualEval.revealedAt';
@@ -44,6 +46,7 @@ export function VisualEvalTab() {
   const [imported, setImported] = useState<VeSession[]>([]);
   const [evaluator, setEvaluator] = useState('');
   const [trial, setTrial] = useState(false);
+  const [style, setStyle] = useState<RenderStyle>(RENDER_STYLE);
 
   useEffect(() => save(KEY_DONE, done), [done]);
   const [blocked, setBlocked] = useState('');
@@ -73,7 +76,7 @@ export function VisualEvalTab() {
     const seed = (crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now()) >>> 0;
     // 화면 시험이거나 자동화 브라우저면 판정에서 빼는 '테스트용'으로 저장
     const origin = trial || navigator.webdriver ? 'synthetic-test' : 'human';
-    const session = newSession(evaluator, seed, new Date(), navigator.userAgent, origin);
+    const session = newSession(evaluator, seed, new Date(), navigator.userAgent, origin, style);
     if (!claim(safeLocal(), token, session)) {
       // 그 사이 다른 탭이 평가를 시작함
       const v = viewFor(safeLocal(), token);
@@ -136,6 +139,14 @@ export function VisualEvalTab() {
             <li>결과는 이 기기에만 저장돼요. 끝나면 "결과 복사"로 기획자에게 보내 주세요.</li>
           </ul>
           <label className="field">평가자 별칭(선택, 이름 대신 이니셜 등)<input value={evaluator} maxLength={40} onChange={(e) => setEvaluator(e.target.value)} /></label>
+          <div className="field">렌더링 버전
+            <div className="row">
+              {(['atmos-1', 'v0'] as RenderStyle[]).map((st) => (
+                <label key={st} className="check"><input type="radio" name="ve-style" checked={style === st} onChange={() => setStyle(st)} /> {STYLE_LABEL[st]}{st === RENDER_STYLE ? ' — 지금 기본' : ''}</label>
+              ))}
+            </div>
+            <small className="hint">결과는 렌더링 버전별로 따로 판정해요(섞지 않음).</small>
+          </div>
           <label className="check"><input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} /> 실제 평가가 아니라 화면 시험이에요(판정에서 빼기)</label>
           <button type="button" className="wide" onClick={start}>평가 시작</button>
           {blocked && <p className="bad">{blocked}</p>}
@@ -181,8 +192,8 @@ function EvalStep({ set, session, onAnswer, onQuit }: { set: ReturnType<typeof r
         <button type="button" className="link" onClick={onQuit}>그만하기(지금까지 답은 버림)</button>
       </div>
       <div className="ve-pair">
-        <figure><figcaption>어항 A</figcaption><AquariumCanvas state={bp.left} options={OPTIONS} label="평가 어항 A" /></figure>
-        <figure><figcaption>어항 B</figcaption><AquariumCanvas state={bp.right} options={OPTIONS} label="평가 어항 B" /></figure>
+        <figure><figcaption>어항 A</figcaption><AquariumCanvas state={bp.left} options={optionsFor(bp.leftSpread)} renderStyle={styleOf(session)} label="평가 어항 A" /></figure>
+        <figure><figcaption>어항 B</figcaption><AquariumCanvas state={bp.right} options={optionsFor(bp.rightSpread)} renderStyle={styleOf(session)} label="평가 어항 B" /></figure>
       </div>
       <div className="ve-q">
         <p><b>1. 두 어항이 같은 기록(같은 감정 기록)으로 만든 어항 같나요?</b></p>
@@ -253,11 +264,13 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
   const [paste, setPaste] = useState('');
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState('');
+  const [style, setStyle] = useState<RenderStyle>(RENDER_STYLE);
   const metrics = useMemo(() => autoMetrics(set), [set]);
-  const rows = compareRows(set, all);
-  const verdict = v1Verdict(all);
-  const counted = countedSessions(all);
-  const report = formatV1Report(set, all);
+  const gaps = useMemo(() => waterGaps(set), [set]);
+  const rows = compareRows(set, all, style);
+  const verdict = v1Verdict(all, style);
+  const counted = countedSessions(all, style);
+  const report = formatV1Report(set, all, style);
   // 정답이 보이는 동안 '마지막으로 열려 있던 시각'을 계속 남긴다(그동안 진행된 평가는 블라인드 위반이 됨)
   useEffect(() => {
     const beat = () => save(KEY_REVEALED, new Date().toISOString());
@@ -269,7 +282,12 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
   return (
     <>
       <section className="card">
-        <h3>판정: {V1_VERDICT_LABEL[verdict.verdict]}</h3>
+        <div className="chips">
+          {(['atmos-1', 'v0'] as RenderStyle[]).map((st) => (
+            <button key={st} type="button" className={style === st ? 'chip on' : 'chip'} onClick={() => setStyle(st)}>{STYLE_LABEL[st]} 결과</button>
+          ))}
+        </div>
+        <h3>{STYLE_LABEL[style]} 판정: {V1_VERDICT_LABEL[verdict.verdict]}</h3>
         <ul>{verdict.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
         <p className="hint">판정에는 <b>실제 사람 평가</b>(형식·좌우가 맞고, 끝까지 답했고, 평가 도중 정답 화면을 열지 않았고, 지금 엔진 버전인 세션, 같은 세션은 한 번)만 써요. 자동 수치는 비교용이고 판정에 넣지 않아요. 기준은 초안이에요(최소 {V1_CRITERIA.minEvaluators}명, 감정 쌍 '다른 기록' {Math.round(V1_CRITERIA.emotionDifferentRate * 100)}% 이상, 차이 점수 감정−시드 {V1_CRITERIA.diffGap} 이상, 감정 맞히기 {Math.round(V1_CRITERIA.emotionGuessRate * 100)}% 이상).</p>
         <p>이 기기 평가 {done.length}개 · 가져온 평가 {imported.length}개 · 판정에 쓴 실제 사람 평가 {counted.length}개 세션</p>
@@ -321,11 +339,35 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
                 <tr key={s.sessionId + s.startedAt}>
                   <td>{s.sessionId}</td><td>{s.evaluator || '-'}</td><td>{s.origin === 'human' ? '사람' : '테스트용(판정 제외)'}</td>
                   <td>{s.answers.length}/{s.order.length}</td>
-                  <td>{counted.some((c) => c.sessionId === s.sessionId) ? '✓' : `— ${exclusionReason(s) ?? '같은 세션 중복'}`}</td>
+                  <td>{counted.some((c) => c.sessionId === s.sessionId) ? '✓' : `— ${exclusionReason(s, style) ?? '같은 세션 중복'}`}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section className="card">
+        <h3>렌더링 비교: 기존(v0) ↔ 분위기(atmos-1)</h3>
+        <p className="hint">같은 어항(같은 엔진 상태)을 두 렌더링으로 그린 정지 그림이에요. 분위기 렌더링은 생물 뒤 물색 덧칠·보조 빛·빛 입자만 더해요(생물 수·배치는 같음).</p>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>날짜</th><th>렌더링</th><th>감정 쌍 물색 차이(자동)</th><th>시드 쌍 물색 차이(자동)</th></tr></thead>
+            <tbody>{gaps.map((g) => <tr key={g.style + g.day}><td>{g.day}일</td><td>{g.style}</td><td>{fmt(g.emotionMean, 1)}</td><td>{fmt(g.seedMean, 1)}</td></tr>)}</tbody>
+          </table>
+        </div>
+        <p className="hint">물색 차이는 화면 가운데 물 색(대략값)의 RGB 거리예요. 자동 참고값일 뿐이고, 한눈에 구별되는지는 사람 평가로 판단해요.</p>
+        <div className="ve-compare">
+          {(['E-warm', 'E-cool', 'E-swing'] as const).map((k) => VE_DAYS.map((day) => (
+            <figure key={k + day}>
+              <figcaption>{shortEmo(set.tanks.find((t) => t.key === k)!.emotion)} · {day}일</figcaption>
+              <div className="ve-compare-row">
+                <StillImg state={set.state(k, day)} spread={set.spread(k, day)} style="v0" />
+                <StillImg state={set.state(k, day)} spread={set.spread(k, day)} style="atmos-1" />
+              </div>
+              <small className="hint">왼쪽 기존 · 오른쪽 분위기</small>
+            </figure>
+          )))}
         </div>
       </section>
 
@@ -337,3 +379,14 @@ function ResultsView({ set, done, imported, onImport, onClearImported, all }: {
     </>
   );
 }
+
+function StillImg({ state, spread, style }: { state: Parameters<typeof stills.get>[0]; spread: number; style: RenderStyle }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    stills.get(state, 0, { spread, style }).then((u) => alive && setUrl(u)).catch(() => {});
+    return () => { alive = false; };
+  }, [state, spread, style]);
+  return url ? <img src={url} alt={`${style} 렌더링`} /> : <div className="thumb-wait">그리는 중…</div>;
+}
+

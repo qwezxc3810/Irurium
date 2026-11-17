@@ -3,6 +3,7 @@ import { AquariumRenderer, type RenderOptions } from '../render/AquariumRenderer
 import type { TankState } from '../engine/types';
 import type { AssetOverrides } from '../assets/manifest';
 import type { RenderQuality } from '../render/quality';
+import type { RenderStyle } from '../render/atmosphere';
 
 export interface AquariumCanvasHandle {
   playCleaning(): void;
@@ -24,10 +25,12 @@ interface Props {
   label?: string;
   /** 렌더링 품질. 바뀌면 같은 렌더러에서 바로 적용(다시 만들지 않음) */
   quality?: RenderQuality;
+  /** 렌더링 버전(기존 v0 / 분위기 atmos-1). 없으면 기본(분위기) */
+  renderStyle?: RenderStyle;
 }
 
 /** PixiJS 렌더러를 React에 붙이는 얇은 껍데기. 상태는 props로만 받는다. */
-export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, legacyLighting, label = '내 어항', quality = 'normal' }, ref) {
+export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, legacyLighting, label = '내 어항', quality = 'normal', renderStyle }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const renderer = useRef<AquariumRenderer | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
@@ -39,7 +42,7 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
     const r = new AquariumRenderer();
     renderer.current = r;
     r.setState(state, options);
-    r.init(host.current, { overrides: assetOverrides, legacyLighting, quality })
+    r.init(host.current, { overrides: assetOverrides, legacyLighting, quality, renderStyle })
       .then((m) => { setMissing(m); setLoading(false); })
       .catch((e: unknown) => { setError(String(e)); setLoading(false); });
     return () => {
@@ -57,6 +60,10 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
   useEffect(() => {
     renderer.current?.setQuality(quality);
   }, [quality]);
+
+  useEffect(() => {
+    if (renderStyle) renderer.current?.setRenderStyle(renderStyle);
+  }, [renderStyle]);
 
   useImperativeHandle(ref, () => ({
     playCleaning: () => renderer.current?.playCleaning(),

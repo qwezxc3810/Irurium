@@ -16,11 +16,13 @@ export interface QualitySpec {
   maxBubbles: number;
   /** 빛줄기·별 반짝임 */
   shimmer: boolean;
+  /** 감정 분위기 빛 입자 최대 개수(화면 연출, 엔진 상태 아님). 물색 덧칠은 저사양에서도 그대로 */
+  maxParticles: number;
 }
 
 export const QUALITY: Record<RenderQuality, QualitySpec> = {
-  normal: { maxResolution: 2, colorGrade: true, glow: true, maxBubbles: 24, shimmer: true },
-  low: { maxResolution: 1, colorGrade: false, glow: false, maxBubbles: 8, shimmer: false },
+  normal: { maxResolution: 2, colorGrade: true, glow: true, maxBubbles: 24, shimmer: true, maxParticles: 40 },
+  low: { maxResolution: 1, colorGrade: false, glow: false, maxBubbles: 8, shimmer: false, maxParticles: 12 },
 };
 
 export const QUALITY_LABEL: Record<RenderQuality, string> = { normal: '일반', low: '저사양' };

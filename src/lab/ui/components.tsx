@@ -35,7 +35,7 @@ export function Thumb({ frame, onClick, big }: { frame: DayFrame; onClick?: () =
     if (!visible) return;
     let alive = true;
     setUrl(null);
-    stills.get(frame.state, frame.moss).then((u) => alive && setUrl(u)).catch(() => alive && setErr(true));
+    stills.get(frame.state, frame.moss, { spread: frame.moodSpread }).then((u) => alive && setUrl(u)).catch(() => alive && setErr(true));
     return () => { alive = false; };
   }, [visible, frame]);
 
@@ -229,7 +229,7 @@ export function FrameModal({ open, onClose }: { open: OpenFrame | null; onClose:
   const fps = useFps(!!open);
   const run = open?.run;
   const frame = run ? frameAt(run, day) : null;
-  const options = useMemo<RenderOptions>(() => ({ mossStage: frame?.moss ?? 0, reducedMotion: false }), [frame?.moss]);
+  const options = useMemo<RenderOptions>(() => ({ mossStage: frame?.moss ?? 0, reducedMotion: false, moodSpread: frame?.moodSpread ?? 0 }), [frame?.moss, frame?.moodSpread]);
   if (!open || !run || !frame) return null;
   const state: TankState = frame.state;
   const m = frame.metrics;
