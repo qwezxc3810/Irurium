@@ -1,6 +1,7 @@
 import { AquariumRenderer } from '../../render/AquariumRenderer';
 import { hashOf } from '../../engine/random';
 import type { TankState } from '../../engine/types';
+import { RENDER_STYLE, type RenderStyle } from '../../render/atmosphere';
 
 /**
  * 갤러리용 정지 그림 공장. 실제 앱과 같은 AquariumRenderer를 화면 밖에 하나만 만들어 차례로 그린다.
@@ -11,7 +12,7 @@ const SIZE = { width: 400, height: 240 };
 class StillService {
   private starting: Promise<AquariumRenderer> | null = null;
   private cache = new Map<string, string>();
-  private queue: Array<{ key: string; state: TankState; moss: 0 | 1 | 2 | 3; resolve: (u: string) => void; reject: (e: unknown) => void }> = [];
+  private queue: Array<{ key: string; state: TankState; moss: 0 | 1 | 2 | 3; spread: number; style: RenderStyle; resolve: (u: string) => void; reject: (e: unknown) => void }> = [];
   private pumping = false;
   failed: string | null = null;
 
@@ -26,12 +27,15 @@ class StillService {
     return this.starting;
   }
 
-  get(state: TankState, moss: 0 | 1 | 2 | 3): Promise<string> {
-    const key = hashOf({ state, moss });
+  /** spread: 감정 이력 흔들림(분위기 렌더링), style: 렌더링 버전 */
+  get(state: TankState, moss: 0 | 1 | 2 | 3, extra: { spread?: number; style?: RenderStyle } = {}): Promise<string> {
+    const spread = extra.spread ?? 0;
+    const style = extra.style ?? RENDER_STYLE;
+    const key = hashOf({ state, moss, spread, style });
     const hit = this.cache.get(key);
     if (hit) return Promise.resolve(hit);
     return new Promise((resolve, reject) => {
-      this.queue.push({ key, state, moss, resolve, reject });
+      this.queue.push({ key, state, moss, spread, style, resolve, reject });
       void this.pump();
     });
   }
@@ -46,7 +50,8 @@ class StillService {
         const hit = this.cache.get(job.key);
         if (hit) { job.resolve(hit); continue; }
         try {
-          const url = r.renderStill(job.state, { mossStage: job.moss });
+          r.setRenderStyle(job.style);
+          const url = r.renderStill(job.state, { mossStage: job.moss, moodSpread: job.spread });
           this.cache.set(job.key, url);
           job.resolve(url);
         } catch (e) {

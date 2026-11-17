@@ -184,7 +184,7 @@ describe('저사양 모드는 그리는 방식만 바꾼다', () => {
 
   it('품질 설정에는 화면 연출 항목만 있다(생물 수·엔진 값 없음)', () => {
     for (const spec of Object.values(QUALITY)) {
-      expect(Object.keys(spec).sort()).toEqual(['colorGrade', 'glow', 'maxBubbles', 'maxResolution', 'shimmer']);
+      expect(Object.keys(spec).sort()).toEqual(['colorGrade', 'glow', 'maxBubbles', 'maxParticles', 'maxResolution', 'shimmer']);
     }
   });
 

@@ -4,6 +4,9 @@ import { seedFromString } from '../engine/random';
 import type { TankConfig, TankState } from '../engine/types';
 import { compositionDistance, layoutDistance, lightDistance, mean, moodCompositionDistance } from './metrics';
 import { frameAt, runTank } from './runner';
+import { atmosphere, compositeWater, RENDER_STYLE, type RenderStyle } from '../render/atmosphere';
+import { gradedWater } from '../render/lighting';
+import { WATER } from './metrics';
 import { SAMPLE_PREFIX, type RunResult, type SampleTank, type ScriptedEntry } from './types';
 
 /**
@@ -120,6 +123,8 @@ export interface VeSet {
   runs: Map<string, RunResult>;
   pairs: VePair[];
   state(key: string, day: VeDay): TankState;
+  /** 그날 감정 이력 흔들림(분위기 렌더링 입력) */
+  spread(key: string, day: VeDay): number;
 }
 
 export function runVisualSet(): VeSet {
@@ -128,6 +133,7 @@ export function runVisualSet(): VeSet {
   return {
     tanks, runs, pairs: vePairs(),
     state: (key, day) => frameAt(runs.get(key)!, day).state,
+    spread: (key, day) => frameAt(runs.get(key)!, day).moodSpread,
   };
 }
 
@@ -140,6 +146,9 @@ export interface BlindPair {
   day: VeDay;
   left: TankState;
   right: TankState;
+  /** 분위기 렌더링 입력(숫자만, 감정 이름 없음) */
+  leftSpread: number;
+  rightSpread: number;
 }
 
 /** 쌍 순서와 좌우를 섞는 간단한 난수(세션마다 다르게, 평가자 기기에서만 씀. 엔진과 무관) */
@@ -159,7 +168,9 @@ export function blindPair(set: VeSet, order: Array<{ pairId: string; swap: boole
   const p = set.pairs.find((x) => x.id === o.pairId)!;
   const A = set.state(p.a, p.day);
   const B = set.state(p.b, p.day);
-  return { pairId: p.id, index, day: p.day, left: o.swap ? B : A, right: o.swap ? A : B };
+  const sa = set.spread(p.a, p.day);
+  const sb = set.spread(p.b, p.day);
+  return { pairId: p.id, index, day: p.day, left: o.swap ? B : A, right: o.swap ? A : B, leftSpread: o.swap ? sb : sa, rightSpread: o.swap ? sa : sb };
 }
 
 // ───────── 자동 수치 ─────────
@@ -247,10 +258,15 @@ export interface VeSession {
   userAgent: string;
   /** 평가 도중(시작 뒤 끝나기 전) 정답 화면이 열린 적이 있으면 true. 블라인드 위반이라 판정에서 뺀다 */
   blindBreach?: boolean;
+  /** 평가에 쓴 렌더링 버전. 없으면 기존 렌더링(v0, 이 칸이 생기기 전 결과). 버전끼리 판정을 섞지 않는다 */
+  renderStyle?: RenderStyle;
 }
 
-export function newSession(evaluator: string, seed: number, now: Date, userAgent: string, origin: VeOrigin = 'human'): VeSession {
+export const styleOf = (s: Pick<VeSession, 'renderStyle'>): RenderStyle => s.renderStyle ?? 'v0';
+
+export function newSession(evaluator: string, seed: number, now: Date, userAgent: string, origin: VeOrigin = 'human', renderStyle: RenderStyle = RENDER_STYLE): VeSession {
   return {
+    renderStyle,
     schema: VE_SCHEMA, sessionId: `ve-${now.getTime().toString(36)}-${(seed >>> 0).toString(36)}`, origin, evaluator: evaluator.trim().slice(0, 40),
     engineVersion: ENGINE_VERSION, startedAt: now.toISOString(), completedAt: null,
     order: shuffleOrder(vePairs(), seed), answers: [], userAgent,
@@ -299,6 +315,7 @@ export function sessionProblems(x: unknown): string[] {
   }
   if (s.completedAt && answered.size !== known.size) errs.push(`완료로 표시됐지만 ${answered.size}/${known.size}쌍만 답했어요`);
   if (s.blindBreach !== undefined && typeof s.blindBreach !== 'boolean') errs.push('블라인드 위반 표시 형식이 틀려요');
+  if (s.renderStyle !== undefined && s.renderStyle !== 'v0' && s.renderStyle !== 'atmos-1') errs.push('렌더링 버전 형식이 틀려요');
   return errs;
 }
 
@@ -339,12 +356,13 @@ export function isBlindBreach(session: Pick<VeSession, 'startedAt'>, revealedAt:
 }
 
 /** 판정에서 빼는 까닭(없으면 null) */
-export function exclusionReason(s: VeSession): string | null {
+export function exclusionReason(s: VeSession, style: RenderStyle = RENDER_STYLE): string | null {
   if (sessionProblems(s).length) return '형식·일관성 오류';
   if (s.origin !== 'human') return '테스트용(화면 시험·자동화)';
   if (!s.completedAt) return '끝까지 답하지 않음';
   if (s.blindBreach) return '블라인드 위반(평가 도중 정답 화면 열림)';
   if (s.engineVersion !== ENGINE_VERSION) return `다른 엔진 버전(${s.engineVersion})으로 본 어항`;
+  if (styleOf(s) !== style) return `다른 렌더링(${styleOf(s)})으로 본 어항`;
   return null;
 }
 
@@ -352,10 +370,10 @@ export function exclusionReason(s: VeSession): string | null {
  * 판정에 쓸 세션: 실제 사람 평가, 형식·일관성 정상, 끝까지 답함, 블라인드 유지, 지금 엔진 버전, 같은 세션은 한 번.
  * 주의: 세는 단위는 '고유 세션'이다. 같은 사람이 여러 번 평가하면 여러 명으로 셀 수 있어서, 평가자 중복은 수집 절차에서 막는다.
  */
-export function countedSessions(sessions: VeSession[]): VeSession[] {
+export function countedSessions(sessions: VeSession[], style: RenderStyle = RENDER_STYLE): VeSession[] {
   const seen = new Set<string>();
   return sessions.filter((s) => {
-    if (exclusionReason(s) || seen.has(s.sessionId)) return false;
+    if (exclusionReason(s, style) || seen.has(s.sessionId)) return false;
     seen.add(s.sessionId);
     return true;
   });
@@ -377,8 +395,8 @@ function truthOf(set: { tanks: VeTank[] }, key: string): EmotionKind {
   return set.tanks.find((t) => t.key === key)!.emotion;
 }
 
-export function humanSummary(sessions: VeSession[], tanks: VeTank[] = veTanks()): HumanCell[] {
-  const counted = countedSessions(sessions);
+export function humanSummary(sessions: VeSession[], tanks: VeTank[] = veTanks(), style: RenderStyle = RENDER_STYLE): HumanCell[] {
+  const counted = countedSessions(sessions, style);
   const pairs = new Map(vePairs().map((p) => [p.id, p]));
   const shownSwap = new Map<VeAnswer, boolean>();
   for (const s of counted) {
@@ -442,8 +460,8 @@ export interface V1Result {
  * V1 판정. 실제 사람 평가(origin 'human', 완료, 21쌍 모두)가 최소 인원보다 적으면 언제나 보류.
  * 자동 수치는 판정에 넣지 않는다(비교용으로만 보여 준다).
  */
-export function v1Verdict(sessions: VeSession[]): V1Result {
-  const counted = countedSessions(sessions);
+export function v1Verdict(sessions: VeSession[], style: RenderStyle = RENDER_STYLE): V1Result {
+  const counted = countedSessions(sessions, style);
   const excluded = sessions.length - counted.length;
   if (counted.length < V1_CRITERIA.minEvaluators) {
     return {
@@ -451,7 +469,7 @@ export function v1Verdict(sessions: VeSession[]): V1Result {
       reasons: [`판정에 쓸 실제 사람 평가가 ${counted.length}개 세션이에요(최소 ${V1_CRITERIA.minEvaluators}개, 한 사람 한 번 기준). 자동 수치만으로는 통과시키지 않아요.`],
     };
   }
-  const cell = (kind: PairKind) => humanSummary(counted).find((c) => c.kind === kind && c.day === 'all')!;
+  const cell = (kind: PairKind) => humanSummary(counted, veTanks(), style).find((c) => c.kind === kind && c.day === 'all')!;
   const emo = cell('emotion');
   const seed = cell('seed');
   const ctl = cell('control');
@@ -486,11 +504,11 @@ export interface CompareRow {
   humanEmotionGuess: number | null;
 }
 
-export function compareRows(set: VeSet, sessions: VeSession[]): CompareRow[] {
+export function compareRows(set: VeSet, sessions: VeSession[], style: RenderStyle = RENDER_STYLE): CompareRow[] {
   const m = autoMetrics(set);
   const ad = autoDistinct(m);
-  const counted = countedSessions(sessions);
-  const hs = humanSummary(counted, set.tanks);
+  const counted = countedSessions(sessions, style);
+  const hs = humanSummary(counted, set.tanks, style);
   return VE_DAYS.map((day) => {
     const a = ad.find((x) => x.day === day)!;
     const he = hs.find((c) => c.kind === 'emotion' && c.day === day)!;
@@ -508,11 +526,11 @@ export function compareRows(set: VeSet, sessions: VeSession[]): CompareRow[] {
 }
 
 /** 정리용 텍스트(복사해서 PR·문서에 붙임). 자동 수치와 사람 평가를 다른 절로 나눈다 */
-export function formatV1Report(set: VeSet, sessions: VeSession[]): string {
-  const rows = compareRows(set, sessions);
-  const v = v1Verdict(sessions);
+export function formatV1Report(set: VeSet, sessions: VeSession[], style: RenderStyle = RENDER_STYLE): string {
+  const rows = compareRows(set, sessions, style);
+  const v = v1Verdict(sessions, style);
   const L: string[] = [];
-  L.push(`# V1 감정별 어항 다양성(시각) — 엔진 ${ENGINE_VERSION}`);
+  L.push(`# V1 감정별 어항 다양성(시각) — 엔진 ${ENGINE_VERSION} · 렌더링 ${style}`);
   L.push('');
   L.push('## 자동 수치 (엔진 상태 기반, 샘플 기록)');
   L.push('| 날짜 | 감정 쌍 최소 거리 | 시드 쌍 최대 거리 | 기존 감정 구별 기준(최소 > 최대) | 감정 쌍 평균 | 시드 쌍 평균 |');
@@ -531,3 +549,36 @@ export function formatV1Report(set: VeSet, sessions: VeSession[]): string {
   for (const r of v.reasons) L.push(`- ${r}`);
   return L.join('\n');
 }
+
+/**
+ * 자동 비교: 화면 물 색(대략값) 차이. 렌더링 버전마다 계산한다(엔진 상태는 같음).
+ * v0은 기존 조명 색 보정만, atmos-1은 그 위에 생물 뒤 물색 덧칠까지 올린 색. RGB 거리(0~441).
+ * 사람 눈의 구별과 같지 않다. 비교용 참고값이다.
+ */
+export interface WaterGap {
+  day: VeDay;
+  style: RenderStyle;
+  emotionMean: number;
+  seedMean: number;
+}
+
+export function waterColorOf(state: TankState, spread: number, style: RenderStyle): [number, number, number] {
+  const graded = gradedWater(WATER, state.light);
+  if (style === 'v0') return graded;
+  const hex = (graded[0] << 16) | (graded[1] << 8) | graded[2];
+  return compositeWater(hex, atmosphere({ temp: state.light.temp, energy: state.light.energy, spread }));
+}
+
+export function waterGaps(set: VeSet): WaterGap[] {
+  const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+  const out: WaterGap[] = [];
+  for (const style of ['v0', 'atmos-1'] as RenderStyle[]) {
+    for (const day of VE_DAYS) {
+      const gap = (kind: PairKind) => mean(set.pairs.filter((p) => p.day === day && p.kind === kind).map((p) =>
+        dist(waterColorOf(set.state(p.a, day), set.spread(p.a, day), style), waterColorOf(set.state(p.b, day), set.spread(p.b, day), style))));
+      out.push({ day, style, emotionMean: gap('emotion'), seedMean: gap('seed') });
+    }
+  }
+  return out;
+}
+

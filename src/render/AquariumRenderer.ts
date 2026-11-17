@@ -2,7 +2,8 @@
 import 'pixi.js/unsafe-eval';
 import { Application, ColorMatrixFilter, Container, Graphics, Sprite, UPDATE_PRIORITY, type Texture } from 'pixi.js';
 import { lightGrade } from './lighting';
-import { glowTexture, makeLightRays, makeStar, type FxView } from './proceduralFx';
+import { fadeTexture, glowTexture, makeLightRays, makeStar, moteTexture, type FxView } from './proceduralFx';
+import { atmosphere, RENDER_STYLE, type RenderStyle } from './atmosphere';
 import { QUALITY, qualityResolution, type RenderQuality } from './quality';
 import { FrameRecorder } from '../perf/frameStats';
 
@@ -29,6 +30,8 @@ import { DISPLAY, displayScale, fishLaneLayout, overlaps, type Box } from './dis
 export interface RenderOptions {
   mossStage: 0 | 1 | 2 | 3;
   reducedMotion: boolean;
+  /** 최근 감정 이력의 흔들림(moodSpreadOf). 분위기 렌더링에만 쓰고 엔진에는 영향 없음. 없으면 0 */
+  moodSpread?: number;
 }
 
 interface StaticView {
@@ -51,6 +54,8 @@ export class AquariumRenderer {
   private scene = new Container();
   private layers = {
     background: new Container(),
+    /** 감정 분위기 물색·보조 빛(배경 위, 생물 뒤라 생물 색을 덮지 않음) */
+    atmos: new Container(),
     back: new Container(),
     floor: new Container(),
     mid: new Container(),
@@ -85,6 +90,14 @@ export class AquariumRenderer {
   private still = false;
   /** 렌더링 품질(모바일 성능 검증). 그리는 방식만 바꾸고 상태·개수는 바꾸지 않는다 */
   private quality: RenderQuality = 'normal';
+  /** 렌더링 버전: v0(기존) / atmos-1(감정 분위기). 비교·평가용으로 바꿀 수 있다 */
+  private renderStyle: RenderStyle = RENDER_STYLE;
+  private atmosTop: Sprite | null = null;
+  private atmosBottom: Sprite | null = null;
+  private atmosWarm: Sprite | null = null;
+  private atmosCool: Sprite | null = null;
+  private motes: Array<{ s: Sprite; warm: boolean; vx: number; vy: number; phase: number; base: number }> = [];
+  private moteTarget = { count: 0, warmShare: 0.5, warmColor: 0xffffff, coolColor: 0xffffff, speed: 1 };
   /** 어항 FPS: PixiJS가 실제로 화면을 그린 프레임 시각(그리기 뒤 UTILITY 우선순위에서 기록) */
   private renderFrames = new FrameRecorder();
 
@@ -92,8 +105,9 @@ export class AquariumRenderer {
    * PixiJS를 시작하고 매니페스트의 그림을 불러온다. 불러오지 못한 파일 목록을 돌려준다.
    * still을 주면 화면에 붙이지 않고 고정 크기로 만들어, renderStill()로 정지 그림만 뽑는다(검증실 갤러리).
    */
-  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number }; overrides?: AssetOverrides; legacyLighting?: boolean; quality?: RenderQuality } = {}): Promise<string[]> {
+  async init(host: HTMLElement | null, opts: { still?: { width: number; height: number }; overrides?: AssetOverrides; legacyLighting?: boolean; quality?: RenderQuality; renderStyle?: RenderStyle } = {}): Promise<string[]> {
     this.still = !!opts.still;
+    this.renderStyle = opts.renderStyle ?? this.renderStyle;
     this.legacyLighting = !!opts.legacyLighting;
     this.quality = opts.quality ?? this.quality;
     if (opts.still) {
@@ -129,6 +143,7 @@ export class AquariumRenderer {
     this.world.mask = clip;
 
     this.layers.light.addChild(this.lightOverlay);
+    this.buildAtmosphere();
     if (!this.legacyLighting) {
       // 왼쪽 위(배경의 수면 빛 방향)에서 퍼지는 가산 빛. 색은 감정 온도에 따라 tint
       this.glow = new Sprite(glowTexture());
@@ -185,6 +200,7 @@ export class AquariumRenderer {
     if (this.state) this.drawLight(this.state);
     const max = QUALITY[q].maxBubbles;
     while (this.bubbles.length > max) this.bubbles.shift()!.s.destroy();
+    if (this.state) this.drawAtmosphere(this.state);
   }
 
   private applyQualityEffects() {
@@ -192,6 +208,129 @@ export class AquariumRenderer {
     const spec = QUALITY[this.quality];
     this.scene.filters = spec.colorGrade ? [this.grade] : [];
     if (this.glow) this.glow.visible = spec.glow;
+  }
+
+  /** 렌더링 버전을 바로 바꾼다(같은 어항 비교용). 엔진 상태·생물 수는 그대로 */
+  setRenderStyle(style: RenderStyle) {
+    if (style === this.renderStyle) return;
+    this.renderStyle = style;
+    if (this.ready && this.state) this.drawAtmosphere(this.state);
+  }
+
+  private buildAtmosphere() {
+    const fade = fadeTexture();
+    const glow = glowTexture();
+    const top = new Sprite(fade);
+    top.width = WORLD.width;
+    top.height = WORLD.height * 0.7;
+    const bottom = new Sprite(fade);
+    bottom.width = WORLD.width;
+    bottom.height = WORLD.height * 0.85;
+    bottom.scale.y = -Math.abs(bottom.scale.y); // 아래에서 위로 옅어지게 뒤집기
+    bottom.y = WORLD.height;
+    // 뿌옇게 바래지 않게: 위층은 빛을 더하고(add), 아래층은 색을 걸러 깊이를 준다(multiply)
+    top.blendMode = 'add';
+    bottom.blendMode = 'multiply';
+    const warm = new Sprite(glow);
+    warm.anchor.set(0.5);
+    warm.position.set(180, 40);
+    warm.width = 1000;
+    warm.height = 760;
+    warm.blendMode = 'add';
+    const cool = new Sprite(glow);
+    cool.anchor.set(0.5);
+    cool.position.set(WORLD.width - 160, WORLD.height - 90);
+    cool.width = 1000;
+    cool.height = 700;
+    cool.blendMode = 'add';
+    for (const sp of [top, bottom, warm, cool]) sp.alpha = 0;
+    this.layers.atmos.addChild(top, bottom, warm, cool);
+    this.atmosTop = top;
+    this.atmosBottom = bottom;
+    this.atmosWarm = warm;
+    this.atmosCool = cool;
+  }
+
+  /** 감정 분위기: 생물 뒤 물색 덧칠 + 보조 빛 + 입자 목표. v0이면 끈다 */
+  private drawAtmosphere(state: TankState) {
+    const on = this.renderStyle !== 'v0';
+    this.layers.atmos.visible = on;
+    if (!on) {
+      this.moteTarget.count = 0;
+      for (const m of this.motes) m.s.destroy();
+      this.motes = [];
+      return;
+    }
+    const a = atmosphere({ temp: state.light.temp, energy: state.light.energy, spread: this.opts.moodSpread ?? 0 });
+    const set = (sp: Sprite | null, t: { color: number; alpha: number }) => { if (sp) { sp.tint = t.color; sp.alpha = t.alpha; } };
+    set(this.atmosTop, a.waterTop);
+    set(this.atmosBottom, a.waterBottom);
+    set(this.atmosWarm, a.glowWarm);
+    set(this.atmosCool, a.glowCool);
+    this.moteTarget = {
+      count: Math.round(QUALITY[this.quality].maxParticles * a.particles.density),
+      warmShare: a.particles.warmShare,
+      warmColor: a.particles.warmColor,
+      coolColor: a.particles.coolColor,
+      speed: a.particles.speed,
+    };
+    // 목표보다 많으면 줄이고, 색 비율이 바뀌었으면 기존 입자 색을 다시 정한다
+    while (this.motes.length > this.moteTarget.count) this.motes.pop()!.s.destroy();
+    this.recolorMotes();
+  }
+
+  private recolorMotes() {
+    const t = this.moteTarget;
+    const warmN = Math.round(this.motes.length * t.warmShare);
+    this.motes.forEach((m, i) => {
+      m.warm = i < warmN;
+      m.s.tint = m.warm ? t.warmColor : t.coolColor;
+      m.vy = (m.warm ? -1 : 1) * Math.abs(m.vy);
+    });
+  }
+
+  /** 입자 하나(위치는 r1·r2 0~1로). 따뜻한 입자는 위로, 차가운 입자는 아래로 천천히 */
+  private spawnMote(r1: number, r2: number, r3: number) {
+    const s = new Sprite(moteTexture());
+    s.anchor.set(0.5);
+    const size = 5 + r3 * 7;
+    s.width = s.height = size;
+    s.position.set(40 + r1 * (WORLD.width - 80), 40 + r2 * (WORLD.height - 180));
+    s.blendMode = 'add';
+    const base = 0.35 + r3 * 0.35;
+    s.alpha = base;
+    this.layers.fx.addChild(s);
+    const m = { s, warm: true, vx: (r2 - 0.5) * 6, vy: 6 + r1 * 10, phase: r3 * 6.28, base };
+    this.motes.push(m);
+    return m;
+  }
+
+  private tickMotes(dt: number, reducedMotion: boolean) {
+    const t = this.moteTarget;
+    if (this.motes.length < t.count) {
+      this.spawnMote(Math.random(), Math.random(), Math.random());
+      this.recolorMotes();
+    }
+    if (reducedMotion) return;
+    for (const m of this.motes) {
+      m.phase += dt * 1.3;
+      m.s.x += (m.vx + Math.sin(m.phase) * 4) * dt * t.speed;
+      m.s.y += m.vy * dt * t.speed;
+      m.s.alpha = m.base * (0.7 + 0.3 * Math.sin(m.phase * 0.8));
+      if (m.s.y < 30) m.s.y = WORLD.height - 150;
+      if (m.s.y > WORLD.height - 140) m.s.y = 40;
+      if (m.s.x < 20) m.s.x = WORLD.width - 20;
+      if (m.s.x > WORLD.width - 20) m.s.x = 20;
+    }
+  }
+
+  /** 정지 그림용: 입자를 정해진 자리에 놓는다(같은 어항이면 같은 그림) */
+  private layoutStillMotes() {
+    for (const m of this.motes) m.s.destroy();
+    this.motes = [];
+    const h = (i: number, k: number) => { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+    for (let i = 0; i < this.moteTarget.count; i++) this.spawnMote(h(i, 1), h(i, 2), h(i, 3));
+    this.recolorMotes();
   }
 
   /** 성능 측정용: 어항이 실제로 그린 프레임 기록 */
@@ -226,6 +365,8 @@ export class AquariumRenderer {
       backend: r.name ?? (r.type === 1 ? 'webgl' : r.type === 2 ? 'webgpu' : 'canvas'),
       drawn: kinds,
       bubbles: this.bubbles.length,
+      motes: this.motes.length,
+      renderStyle: this.renderStyle,
     };
   }
 
@@ -237,6 +378,7 @@ export class AquariumRenderer {
     if (themeChanged) this.drawTheme(state.themeId);
     this.syncObjects(state.objects);
     this.drawLight(state);
+    this.drawAtmosphere(state);
     this.syncEffects(state.effects);
     if (!this.wipe) this.drawMoss(opts.mossStage);
   }
@@ -245,13 +387,14 @@ export class AquariumRenderer {
    * 정지 그림 한 장(data URL). init({ still })로 만든 렌더러에서만 쓴다.
    * 다른 어항의 오브젝트 id가 겹칠 수 있어 매번 오브젝트를 비우고 다시 그린다. 상태는 읽기만 한다.
    */
-  renderStill(state: TankState, opts: Pick<RenderOptions, 'mossStage'>, type: 'image/jpeg' | 'image/png' = 'image/jpeg'): string {
+  renderStill(state: TankState, opts: Pick<RenderOptions, 'mossStage' | 'moodSpread'>, type: 'image/jpeg' | 'image/png' = 'image/jpeg'): string {
     if (!this.ready || !this.still) throw new Error('still_renderer_not_ready');
     for (const f of this.fish.values()) f.destroy();
     this.fish.clear();
     for (const v of this.statics.values()) v.sprite.destroy();
     this.statics.clear();
-    this.setState(state, { mossStage: opts.mossStage, reducedMotion: true });
+    this.setState(state, { mossStage: opts.mossStage, reducedMotion: true, moodSpread: opts.moodSpread });
+    this.layoutStillMotes();
     for (const f of this.fish.values()) f.settle(state);
     const fishBoxes = [...this.fish.values()].map((f) => f.bounds());
     for (const v of this.statics.values()) {
@@ -444,6 +587,7 @@ export class AquariumRenderer {
     const calm = rm || !QUALITY[this.quality].shimmer;
     for (const fx of this.fxViews.values()) fx.tick(this.time, calm);
     if (!rm) this.tickBubbles(dt);
+    this.tickMotes(dt, rm);
     if (this.wipe) this.tickWipe(dt);
   }
 

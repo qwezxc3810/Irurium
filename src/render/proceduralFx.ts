@@ -19,6 +19,30 @@ function canvasTexture(key: string, w: number, h: number, draw: (g: CanvasRender
   return t;
 }
 
+/** 위(진함)에서 아래(투명)로 옅어지는 흰 띠. tint로 색을 입히고, 뒤집어 쓰면 아래에서 위로 */
+export function fadeTexture(): Texture {
+  return canvasTexture('fade', 4, 256, (g) => {
+    const l = g.createLinearGradient(0, 0, 0, 256);
+    l.addColorStop(0, 'rgba(255,255,255,1)');
+    l.addColorStop(0.55, 'rgba(255,255,255,0.35)');
+    l.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = l;
+    g.fillRect(0, 0, 4, 256);
+  });
+}
+
+/** 작고 부드러운 빛 알갱이(분위기 입자) */
+export function moteTexture(): Texture {
+  return canvasTexture('mote', 32, 32, (g) => {
+    const r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    r.addColorStop(0, 'rgba(255,255,255,1)');
+    r.addColorStop(0.35, 'rgba(255,255,255,0.6)');
+    r.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = r;
+    g.fillRect(0, 0, 32, 32);
+  });
+}
+
 /** 왼쪽 위에서 퍼지는 둥근 빛(흰색, tint로 색을 입힌다) */
 export function glowTexture(): Texture {
   return canvasTexture('glow', 256, 256, (g) => {

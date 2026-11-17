@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AquariumCanvas, type AquariumCanvasHandle } from './ui/AquariumCanvas';
 import { PerfPanel, perfEnabled } from './ui/PerfPanel';
 import { clearAutoDecision, useAutoQuality } from './ui/useAutoQuality';
+import { moodSpreadOf } from './render/atmosphere';
 import { loadPref, PREF_LABEL, safeStorage, type QualityPref } from './perf/autoQuality';
 import type { PerfResult } from './perf/report';
 import { useDialog, type AskOptions, type AskResult } from './ui/Dialog';
@@ -71,7 +72,9 @@ export function App() {
   const head = s.head;
   const moss = s.moss(today);
   const { quality, status: qualityStatus } = useAutoQuality(canvas, qualityPref, autoKey);
-  const options = useMemo<RenderOptions>(() => ({ mossStage: moss.stage, reducedMotion }), [moss.stage, reducedMotion]);
+  // 감정 분위기 렌더링: 최근 감정 이력의 흔들림(원장에서 읽기만 함)
+  const moodSpread = useMemo(() => moodSpreadOf(head.ledger.moodTrail, today), [head, today]);
+  const options = useMemo<RenderOptions>(() => ({ mossStage: moss.stage, reducedMotion, moodSpread }), [moss.stage, reducedMotion, moodSpread]);
   const invariantErrors = s.checkInvariants({ deep: false });
 
   // ── 기록 폼 ──
