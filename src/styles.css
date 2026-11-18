@@ -68,3 +68,15 @@ button.subtle { background: transparent; border-color: transparent; color: var(-
 
 button.link { background: none; border: none; color: #2563eb; padding: 0; margin-top: 4px; text-decoration: underline; cursor: pointer; font-size: 13px; width: auto; }
 .field .hint { display: block; color: #64748b; font-size: 12px; margin-top: 4px; }
+
+/* 기억 보기 */
+.memory { margin-top: 10px; }
+.memory-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.memory-head h2 { margin: 0; font-size: 16px; }
+.memory-head .ghost { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 4px 8px; }
+.memory-moment { padding: 8px 0; border-top: 1px dashed var(--line); font-size: 13.5px; line-height: 1.6; }
+.memory-moment:first-of-type { border-top: none; }
+.memory-moment .chip.small { padding: 1px 8px; font-size: 12px; cursor: default; margin-right: 4px; }
+.memory-note { margin: 4px 0 0; font-size: 14px; }
+.memory details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.memory-hint { margin-top: 8px; }
