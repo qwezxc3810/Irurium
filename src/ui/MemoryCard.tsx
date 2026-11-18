@@ -29,10 +29,10 @@ function Moment({ m, title }: { m: MemoryMoment; title: string }) {
   );
 }
 
-/** 기억 보기 카드: 어항 속 요소가 어떤 기록에서 생기고 자랐는지 */
+/** 기억 보기 카드: 어항 속 요소가 어떤 기록에서 생기고 자랐는지. 포커스를 가두지 않는 비모달 영역이라 dialog가 아닌 section(aria-live)으로 둔다 */
 export function MemoryCard({ memory, kind, onClose }: { memory: ObjectMemory; kind: string; onClose: () => void }) {
   return (
-    <div className="card memory" role="dialog" aria-label={`${memory.name}의 기억`}>
+    <section className="card memory" aria-label={`${memory.name}의 기억`} aria-live="polite">
       <div className="memory-head">
         <h2>{KIND_ICON[kind] ?? '•'} {memory.name}</h2>
         <button type="button" className="ghost" onClick={onClose} aria-label="닫기">닫기</button>
@@ -48,6 +48,6 @@ export function MemoryCard({ memory, kind, onClose }: { memory: ObjectMemory; ki
           {memory.grew.map((m, i) => <Moment key={i} m={m} title={m.kind === 'finale' ? '대표 생물이 된 날' : '자란 날'} />)}
         </details>
       )}
-    </div>
+    </section>
   );
 }
