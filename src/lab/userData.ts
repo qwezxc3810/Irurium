@@ -1,7 +1,9 @@
 import { computeFinale, computeSnapshot } from '../engine/compute';
 import { expectedInputHash, structureProblems } from '../engine/session';
 import { moodSpreadOf } from '../render/atmosphere';
-import { ENGINE_VERSION } from '../engine/config';
+import { SUPPORTED_ENGINES, type EngineVersion } from '../engine/config';
+
+const supported = (v: string) => (SUPPORTED_ENGINES as readonly string[]).includes(v);
 import { addDays, daysBetween } from '../engine/dates';
 import { computeMoss } from '../engine/moss';
 import { hashOf } from '../engine/random';
@@ -64,7 +66,7 @@ const contentHashOf = (s: Pick<Snapshot, 'state' | 'ledger' | 'changes'>) => has
 export interface IntegrityReport {
   checked: number;
   problems: string[];
-  /** 다른 엔진 버전으로 만든 스냅샷 수. 지금 엔진으로 다시 계산하면 달라지는 게 정상이라 I2(재계산)는 건너뛰고 I3(내용 해시)·I5(체인)·I6(입력 해시)만 본다 */
+  /** 계산 코드를 보관하지 않는 옛 엔진 버전(SUPPORTED_ENGINES 밖, 예: 0.1.0)으로 만든 스냅샷 수. I2(재계산)는 할 수 없어 건너뛰고 I3·I5·I6만 본다 */
   otherVersion: number;
   versions: string[];
   fingerprint: string;
@@ -76,8 +78,8 @@ export interface IntegrityReport {
  * - I5 기록 체인 구조: 엔진과 같은 structureProblems()를 쓴다. 머리→시작 한 줄(갈래·고아·순환 없음), 기준 순번,
  *   스냅샷·기록 id 중복, 같은 clientId 두 번, 기록 순번, 스냅샷↔기록 연결. 버전과 관계없이 확인한다.
  * - I6 입력 해시 체인: 버전과 관계없이 기준의 입력 해시 + 이 스냅샷의 입력 + 엔진 버전으로 다시 만든 해시가 같은지.
- * - I2 다시 계산: 지금 엔진 버전으로 만든 스냅샷만. 다른 버전은 저장된 결과가 정답이라 건너뛴다.
- *   그래서 다른 버전 스냅샷의 상태와 내용 해시를 함께 고쳐 쓴 경우는 잡지 못한다.
+ * - I2 다시 계산: 계산 코드를 보관 중인 버전(SUPPORTED_ENGINES: 0.2.0·0.3.0)은 각 스냅샷의 버전 규칙으로 다시 계산한다.
+ *   보관하지 않는 옛 버전(0.1.0)은 저장된 결과가 정답이라 건너뛴다. 그래서 그런 스냅샷의 상태와 내용 해시를 함께 고쳐 쓴 경우는 잡지 못한다.
  * 구조(I5)가 깨졌으면 기준을 믿을 수 없어서 I6·I2는 하지 않고 그렇다고 적는다(I3는 스냅샷마다 따로 확인).
  */
 export function verifyUserData(d: Readonly<SessionData>): IntegrityReport {
@@ -86,7 +88,7 @@ export function verifyUserData(d: Readonly<SessionData>): IntegrityReport {
   let otherVersion = 0;
   for (const s of d.snapshots) {
     if (contentHashOf(s) !== s.contentHash) problems.push(`${s.id}: 저장된 내용이 만든 뒤 바뀜(I3)`);
-    if (s.baseId && s.engineVersion !== ENGINE_VERSION) otherVersion++;
+    if (s.baseId && !supported(s.engineVersion)) otherVersion++;
   }
   if (!structureOk) {
     problems.push('기록 체인 구조(I5)가 깨져서 입력 해시(I6)·다시 계산(I2)은 하지 않았어요');
@@ -95,9 +97,10 @@ export function verifyUserData(d: Readonly<SessionData>): IntegrityReport {
     for (const s of d.snapshots) {
       const base = s.baseId ? byId.get(s.baseId)! : null;
       if (expectedInputHash(s, base) !== s.inputHash) problems.push(`${s.id}: 입력 해시가 맞지 않음 — 입력·기준·엔진 버전이 바뀜(I6)`);
-      // 그 전 엔진으로 만든 스냅샷은 저장된 결과가 정답이다. 지금 엔진으로 다시 계산해 비교(I2)만 하지 않는다.
-      if (!base || s.engineVersion !== ENGINE_VERSION) continue;
-      const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq) : s.input ? computeSnapshot(base, s.input, s.cfg) : null;
+      // 보관하지 않는 옛 엔진으로 만든 스냅샷은 저장된 결과가 정답이다. 다시 계산해 비교(I2)만 하지 않는다.
+      if (!base || !supported(s.engineVersion)) continue;
+      const v = s.engineVersion as EngineVersion;
+      const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq, v) : s.input ? computeSnapshot(base, s.input, s.cfg, v) : null;
       if (!again) problems.push(`${s.id}: 계산 입력 없음`);
       else if (contentHashOf(again) !== s.contentHash) problems.push(`${s.id}: 다시 계산하면 결과가 다름(I2)`);
     }

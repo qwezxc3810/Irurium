@@ -340,7 +340,7 @@ function placeNew(state: TankState, ledger: Ledger, e: ElementDef, rng: Rng, seq
 // ───────────────────────── 감정 흔적 (0.3.0) ─────────────────────────
 
 function newTrace(): TraceLedger {
-  return { pages: 0, owed: 0, day: { date: null, count: 0 }, emotionCounts: {}, made: 0, grownOn: {} };
+  return { pages: 0, queue: [], day: { date: null, count: 0 }, emotionCounts: {}, made: 0, grownOn: {} };
 }
 
 /** 감정 흔적 자리: 먼 줄·바닥 앞줄의 칸 중 다른 요소와 겹치지 않는 곳을 무작위 순서로 찾는다 */
@@ -394,6 +394,11 @@ function addTrace(state: TankState, t: TraceLedger, ledger: Ledger, emo: Emotion
   return { kind: 'full', name: sym.name };
 }
 
+/**
+ * 그날 기록의 쪽수만큼 흔적을 만든다. 하루 상한을 넘은 몫은 원래 기록의 감정·순번·날짜와 함께 대기열에 넣고,
+ * 다음 기록에서 먼저 미룬 것부터 놓는다. 나중에 놓여도 흔적의 감정과 기억(원래 기록)은 바뀌지 않는다.
+ * 감정을 알 수 없는 기록은 흔적을 만들지 않는다(그 쪽수는 완독 목표 = 총 쪽수 ÷ 15에는 들어가서 완독 때 채워진다).
+ */
 function applyTraces(state: TankState, ledger: Ledger, input: EngineInput, mood: MoodVec, cfg: TankConfig, rng: Rng, changes: Change[]) {
   const t = (ledger.trace ??= newTrace());
   const date = input.localDate;
@@ -403,38 +408,55 @@ function applyTraces(state: TankState, ledger: Ledger, input: EngineInput, mood:
   const pages = t.pages + Math.max(0, input.amount);
   const earned = Math.floor(pages / TRACE.pagesPerTrace);
   t.pages = pages % TRACE.pagesPerTrace;
-  const pool = t.owed + earned;
-  // 감정을 알 수 없는 기록은 흔적을 만들지 않고 몫만 쌓아 둔다(다음 감정 기록이나 완독 채움에서 씀)
-  if (!emo) {
-    t.owed = pool;
-    return;
-  }
-  const n = Math.min(Math.max(0, TRACE.dailyMax - t.day.count), pool);
-  let used = 0;
+  if (emo) for (let i = 0; i < earned; i++) t.queue.push({ emotion: emo.id, seq: input.seq, date });
   let shone = false;
-  for (let i = 0; i < n; i++) {
-    const r = addTrace(state, t, ledger, emo, cfg, rng, input.seq, date, false);
-    used += 1;
+  while (t.day.count < TRACE.dailyMax && t.queue.length > 0) {
+    const item = t.queue.shift()!;
+    const src = emotionById(item.emotion);
+    t.day.count += 1;
+    if (!src) continue;
+    const r = addTrace(state, t, ledger, src, cfg, rng, input.seq, date, false);
     if (r.kind === 'full') {
       // 더 놓을 자리도 키울 흔적도 없으면 반짝임만(몫은 쓴 것으로 친다)
-      if (!shone) changes.push({ level: 'daily', text: `${emo.name}의 흔적들이 반짝였어요` });
+      if (!shone) changes.push({ level: 'daily', text: `${src.name}의 흔적들이 반짝였어요` });
       shone = true;
       continue;
     }
+    const own = item.seq === input.seq;
+    // 미뤄 둔 흔적이면 그 기록의 날짜·감정으로 말하고, 기억 보기가 원래 기록을 보여 주도록 sourceSeq를 남긴다
+    const why = own ? `${quote(input.note)}${src.name}에서` : `${shortDate(item.date)}의 ${src.name}${josa(src.name, '이', '가')} 이어져`;
     changes.push({
       level: 'growth',
-      text: r.kind === 'new' ? `${quote(input.note)}${emo.name}에서 ${subj(r.name)} 생겼어요` : `${quote(input.note)}${emo.name}에서 ${subj(r.name)} 한 단계 자랐어요`,
+      text: `${why} ${subj(r.name)} ${r.kind === 'new' ? '생겼어요' : '한 단계 자랐어요'}`,
       objectId: r.obj.id,
+      ...(own ? {} : { sourceSeq: item.seq }),
     });
   }
-  t.day.count += used;
-  t.owed = pool - used;
+}
+
+function shortDate(iso: string): string {
+  const [, m, d] = iso.split('-');
+  return `${Number(m)}월 ${Number(d)}일`;
 }
 
 /** 완독 채움: 목표 = max(최소, 총 쪽수 ÷ 기준). 모자란 만큼 기록한 감정 비율(최대 나머지 방식)로 나눠 놓는다. 쿨다운·하루 상한 없음 */
 function fillTracesAtFinale(state: TankState, ledger: Ledger, cfg: TankConfig, rng: Rng, seq: number, changes: Change[]) {
   const t = ledger.trace;
   if (!t) return;
+  // 0) 하루 상한으로 미뤄 둔 흔적부터, 원래 기록의 감정·출처 그대로 놓는다(하루 상한·쿨다운 없음)
+  for (const item of t.queue) {
+    const src = emotionById(item.emotion);
+    if (!src) continue;
+    const r = addTrace(state, t, ledger, src, cfg, rng, seq, null, true);
+    if (r.kind === 'full') continue;
+    changes.push({
+      level: 'finale',
+      text: `${shortDate(item.date)}의 ${src.name}${josa(src.name, '이', '가')} 이어져 ${subj(r.name)} ${r.kind === 'new' ? '생겼어요' : '한 단계 자랐어요'}`,
+      objectId: r.obj.id,
+      sourceSeq: item.seq,
+    });
+  }
+  t.queue = [];
   const total = cfg.goal.totalUnits ?? ledger.maxProgress;
   const target = Math.max(TRACE.targetMin, Math.floor(total / TRACE.targetDivisor));
   const missing = target - t.made;
@@ -472,7 +494,6 @@ function fillTracesAtFinale(state: TankState, ledger: Ledger, cfg: TankConfig, r
   while (left > 0 && order.some((q) => !full.has(q.id))) {
     for (const q of order) if (left > 0 && one(q.id)) left -= 1;
   }
-  t.owed = 0;
 }
 
 // ───────────────────────── 특별 변화 ─────────────────────────

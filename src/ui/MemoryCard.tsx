@@ -45,7 +45,7 @@ export function MemoryCard({ memory, kind, onClose }: { memory: ObjectMemory; ki
       {memory.grew.length > 0 && (
         <details open={memory.grew.length <= 3}>
           <summary>함께 자란 날 {memory.grew.length}번</summary>
-          {memory.grew.map((m, i) => <Moment key={i} m={m} title={m.kind === 'finale' ? '대표 생물이 된 날' : '자란 날'} />)}
+          {memory.grew.map((m, i) => <Moment key={i} m={m} title={m.kind === 'finale' ? (kind === 'emotion' ? '완성하며 자란 날' : '대표 생물이 된 날') : '자란 날'} />)}
         </details>
       )}
     </section>

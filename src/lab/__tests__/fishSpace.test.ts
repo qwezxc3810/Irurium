@@ -5,6 +5,8 @@ import { elementOf, themeOf } from '../../engine/catalog';
 import { computeFinale, genesisState } from '../../engine/compute';
 import { ENGINE_VERSION, FISH_SPACE } from '../../engine/config';
 import { hashOf } from '../../engine/random';
+import { TankSession } from '../../engine/session';
+import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios';
 import type { SessionData } from '../../engine/session';
 import type { TankState } from '../../engine/types';
 import { FISH_BAND_TARGET, occlusionRows } from '../occlusion';
@@ -167,4 +169,28 @@ describe('이전 엔진(0.1.0) 기록 보호', () => {
     expect(hashOf(r.frames[r.frames.length - 1]!.state)).toBe(hashOf(head.state));
     expect(JSON.stringify(data)).toBe(raw);
   });
+});
+
+describe('리뷰 회귀(PR #24): 검증실 무결성 검사도 보관 중인 버전(0.2.0·0.3.0)은 그 버전으로 다시 계산(I2)', () => {
+  const make = (v: '0.2.0' | '0.3.0') => {
+    const s = new TankSession(littlePrinceConfig(), 0, v);
+    let t = 0;
+    for (const e of littlePrinceEntries()) s.addEntry(e, (t += 1000));
+    return s.toJSON();
+  };
+  for (const v of ['0.2.0', '0.3.0'] as const) {
+    it(`${v} 기록: 정상이면 문제 없음, 다시 계산 대상(옛 버전으로 건너뛴 스냅샷 0)`, () => {
+      const rep = verifyUserData(parseUserData(JSON.stringify(make(v))));
+      expect(rep.problems).toEqual([]);
+      expect(rep.otherVersion).toBe(0);
+      expect(rep.versions).toEqual([v]);
+    });
+    it(`${v} 기록: 상태와 내용 해시를 함께 고쳐도 다시 계산(I2)으로 잡아낸다`, () => {
+      const d = make(v);
+      const sn = d.snapshots[5]!;
+      sn.state.objects[0]!.scale = 9;
+      sn.contentHash = hashOf({ state: sn.state, ledger: sn.ledger, changes: sn.changes });
+      expect(verifyUserData(parseUserData(JSON.stringify(d))).problems.some((p) => p.includes('I2'))).toBe(true);
+    });
+  }
 });

@@ -110,8 +110,8 @@ export interface Ledger {
 export interface TraceLedger {
   /** 흔적으로 아직 바꾸지 않은 쪽수(15쪽 미만 나머지) */
   pages: number;
-  /** 하루 상한·자리 부족으로 미뤄 둔 흔적 수 */
-  owed: number;
+  /** 하루 상한으로 미뤄 둔 흔적. 원래 기록의 감정·순번·날짜를 함께 보관해 나중에 놓여도 출처가 바뀌지 않는다(먼저 미룬 것부터) */
+  queue: Array<{ emotion: string; seq: number; date: ISODate }>;
   day: { date: ISODate | null; count: number };
   /** 기록한 대표 감정 횟수(감정 id → 횟수). 완독 채움 비율에 쓴다 */
   emotionCounts: Record<string, number>;
@@ -127,6 +127,8 @@ export interface Change {
   level: ChangeLevel;
   text: string;
   objectId?: string;
+  /** 0.3.0 감정 흔적만: 미뤄 둔 흔적이 나중 기록에서 놓였을 때, 그 흔적을 만든 원래 기록의 순번(기억 보기가 원래 기록을 보여 줌) */
+  sourceSeq?: number;
 }
 
 export interface EngineOutput {

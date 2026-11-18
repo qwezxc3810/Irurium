@@ -179,7 +179,7 @@ export function App() {
     if (deepErrors.length) return setReplayResult(`불변 규칙 위반: ${deepErrors.join(' / ')}`);
     const edited = s.revisions.length > 0 || s.entries.some((e) => e.deletedAt || e.rev > 1);
     if (edited) return setReplayResult('모든 스냅샷을 저장된 입력으로 다시 계산해 봤고 결과가 같아요. 수정·삭제한 기록이 있어 처음부터 다시 넣는 비교는 하지 않았어요.');
-    const replayed = TankSession.replay(s.cfg, inputLog.current);
+    const replayed = TankSession.replay(s.cfg, inputLog.current, s.engineVersion);
     const current = s.snapshots.filter((x) => x.kind === 'entry').at(-1);
     const currentHash = current ? current.inputHash + ':' + hashOf(current.state) : '';
     setReplayResult(replayed === currentHash || inputLog.current.length === 0 ? '모든 스냅샷을 다시 계산해 봤고, 같은 기록을 처음부터 다시 넣어도 같은 어항이 나왔어요.' : '결과가 달라요. 엔진 재현성 오류예요.');
