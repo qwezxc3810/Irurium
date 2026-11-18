@@ -123,6 +123,114 @@
         437,
         640
       ]
+    },
+    "emotion.sunset-coral": {
+      "src": "emotions/sunset-coral.webp",
+      "displayHeight": 88,
+      "size": [
+        501,
+        640
+      ]
+    },
+    "emotion.pearl-clam": {
+      "src": "emotions/pearl-clam.webp",
+      "displayHeight": 62,
+      "size": [
+        640,
+        612
+      ]
+    },
+    "emotion.stone-tower": {
+      "src": "emotions/stone-tower.webp",
+      "displayHeight": 86,
+      "size": [
+        488,
+        640
+      ]
+    },
+    "emotion.star-jelly": {
+      "src": "emotions/star-jelly.webp",
+      "displayHeight": 105,
+      "size": [
+        366,
+        640
+      ]
+    },
+    "emotion.bottle-letter": {
+      "src": "emotions/bottle-letter.webp",
+      "displayHeight": 78,
+      "size": [
+        526,
+        640
+      ]
+    },
+    "emotion.tear-pearl": {
+      "src": "emotions/tear-pearl.webp",
+      "displayHeight": 56,
+      "size": [
+        352,
+        301
+      ]
+    },
+    "emotion.tangled-weed": {
+      "src": "emotions/tangled-weed.webp",
+      "displayHeight": 76,
+      "size": [
+        326,
+        343
+      ],
+      "sway": {
+        "amplitude": 0.05,
+        "frequency": 0.55
+      }
+    },
+    "emotion.foggy-compass": {
+      "src": "emotions/foggy-compass.webp",
+      "displayHeight": 62,
+      "size": [
+        337,
+        296
+      ]
+    },
+    "emotion.black-urchin": {
+      "src": "emotions/black-urchin.webp",
+      "displayHeight": 62,
+      "size": [
+        360,
+        347
+      ]
+    },
+    "emotion.sleeping-conch": {
+      "src": "emotions/sleeping-conch.webp",
+      "displayHeight": 54,
+      "size": [
+        339,
+        256
+      ]
+    },
+    "emotion.fish-school": {
+      "src": "emotions/fish-school.webp",
+      "displayWidth": 58,
+      "swim": {
+        "amplitude": 0.11,
+        "frequency": 1.6
+      },
+      "size": [
+        768,
+        351
+      ]
+    },
+    "emotion.lantern-fish": {
+      "src": "emotions/lantern-fish.webp",
+      "displayWidth": 92,
+      "swim": {
+        "amplitude": 0.08,
+        "frequency": 0.6
+      },
+      "size": [
+        357,
+        265
+      ]
     }
   },
   "fx": {
