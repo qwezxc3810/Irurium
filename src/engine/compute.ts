@@ -340,7 +340,7 @@ function placeNew(state: TankState, ledger: Ledger, e: ElementDef, rng: Rng, seq
 // ───────────────────────── 감정 흔적 (0.3.0) ─────────────────────────
 
 function newTrace(): TraceLedger {
-  return { pages: 0, queue: [], day: { date: null, count: 0 }, emotionCounts: {}, made: 0, grownOn: {} };
+  return { buckets: {}, queue: [], day: { date: null, count: 0 }, emotionCounts: {}, made: 0, grownOn: {} };
 }
 
 /** 감정 흔적 자리: 먼 줄·바닥 앞줄의 칸 중 다른 요소와 겹치지 않는 곳을 무작위 순서로 찾는다 */
@@ -395,9 +395,13 @@ function addTrace(state: TankState, t: TraceLedger, ledger: Ledger, emo: Emotion
 }
 
 /**
- * 그날 기록의 쪽수만큼 흔적을 만든다. 하루 상한을 넘은 몫은 원래 기록의 감정·순번·날짜와 함께 대기열에 넣고,
- * 다음 기록에서 먼저 미룬 것부터 놓는다. 나중에 놓여도 흔적의 감정과 기억(원래 기록)은 바뀌지 않는다.
- * 감정을 알 수 없는 기록은 흔적을 만들지 않는다(그 쪽수는 완독 목표 = 총 쪽수 ÷ 15에는 들어가서 완독 때 채워진다).
+ * 흔적의 출처 규칙(PR #24 리뷰 반영, 명시 정책):
+ * - **감정별 적립**: 쪽수는 대표 감정마다 따로 모은다. 같은 감정의 쪽수가 15쪽 차면 그 감정의 흔적 1개가 된다.
+ *   서로 다른 감정의 쪽수는 섞지 않는다(슬픔 14쪽 + 기쁨 1쪽은 흔적이 되지 않음).
+ * - **출처 기록 = 그 15쪽에 가장 많이 기여한 기록**(같으면 먼저 온 기록). 기억 보기는 그 기록을 보여 준다.
+ *   여러 기록이 모여 찼으면 문구에 "○월 ○일부터 모인 ○○에서"라고 쓴다.
+ * - **감정을 알 수 없는 기록의 쪽수는 모으지 않는다.** 나중 감정의 흔적을 만들지 않고, 완독 목표(총 쪽수 ÷ 15)에만 들어간다.
+ * - 하루 상한을 넘은 몫은 출처와 함께 대기열에 넣고 다음 기록에서 먼저 놓는다(놓인 날과 출처 기록이 다를 수 있음).
  */
 function applyTraces(state: TankState, ledger: Ledger, input: EngineInput, mood: MoodVec, cfg: TankConfig, rng: Rng, changes: Change[]) {
   const t = (ledger.trace ??= newTrace());
@@ -405,10 +409,29 @@ function applyTraces(state: TankState, ledger: Ledger, input: EngineInput, mood:
   if (t.day.date !== date) t.day = { date, count: 0 };
   const emo = representativeEmotion(input.moodChips, mood);
   if (emo) t.emotionCounts[emo.id] = (t.emotionCounts[emo.id] ?? 0) + 1;
-  const pages = t.pages + Math.max(0, input.amount);
-  const earned = Math.floor(pages / TRACE.pagesPerTrace);
-  t.pages = pages % TRACE.pagesPerTrace;
-  if (emo) for (let i = 0; i < earned; i++) t.queue.push({ emotion: emo.id, seq: input.seq, date });
+  if (emo && input.amount > 0) {
+    const bucket = (t.buckets[emo.id] ??= []);
+    bucket.push({ seq: input.seq, date, pages: input.amount });
+    let total = bucket.reduce((a, b) => a + b.pages, 0);
+    while (total >= TRACE.pagesPerTrace) {
+      // 먼저 온 기록부터 15쪽을 떼어 내고, 가장 많이 낸 기록을 출처로
+      let need = TRACE.pagesPerTrace;
+      const took: Array<{ seq: number; date: string; pages: number }> = [];
+      while (need > 0) {
+        const head = bucket[0]!;
+        const k = Math.min(need, head.pages);
+        took.push({ seq: head.seq, date: head.date, pages: k });
+        head.pages -= k;
+        need -= k;
+        if (head.pages === 0) bucket.shift();
+      }
+      const main = [...took].sort((a, b) => b.pages - a.pages || a.seq - b.seq)[0]!;
+      const first = took[0]!.date;
+      t.queue.push({ emotion: emo.id, seq: main.seq, date: main.date, ...(took.length > 1 ? { from: first } : {}) });
+      total -= TRACE.pagesPerTrace;
+    }
+    if (bucket.length === 0) delete t.buckets[emo.id];
+  }
   let shone = false;
   while (t.day.count < TRACE.dailyMax && t.queue.length > 0) {
     const item = t.queue.shift()!;
@@ -423,8 +446,8 @@ function applyTraces(state: TankState, ledger: Ledger, input: EngineInput, mood:
       continue;
     }
     const own = item.seq === input.seq;
-    // 미뤄 둔 흔적이면 그 기록의 날짜·감정으로 말하고, 기억 보기가 원래 기록을 보여 주도록 sourceSeq를 남긴다
-    const why = own ? `${quote(input.note)}${src.name}에서` : `${shortDate(item.date)}의 ${src.name}${josa(src.name, '이', '가')} 이어져`;
+    // 여러 기록이 모여 찼으면 "○월 ○일부터 모인", 미뤄 둔 흔적이면 그 기록의 날짜·감정으로 말한다. 출처가 이 기록이 아니면 sourceSeq를 남긴다
+    const why = item.from ? `${shortDate(item.from)}부터 모인 ${src.name}에서` : own ? `${quote(input.note)}${src.name}에서` : `${shortDate(item.date)}의 ${src.name}${josa(src.name, '이', '가')} 이어져`;
     changes.push({
       level: 'growth',
       text: `${why} ${subj(r.name)} ${r.kind === 'new' ? '생겼어요' : '한 단계 자랐어요'}`,
@@ -451,7 +474,7 @@ function fillTracesAtFinale(state: TankState, ledger: Ledger, cfg: TankConfig, r
     if (r.kind === 'full') continue;
     changes.push({
       level: 'finale',
-      text: `${shortDate(item.date)}의 ${src.name}${josa(src.name, '이', '가')} 이어져 ${subj(r.name)} ${r.kind === 'new' ? '생겼어요' : '한 단계 자랐어요'}`,
+      text: `${item.from ? `${shortDate(item.from)}부터 모인 ${src.name}에서` : `${shortDate(item.date)}의 ${src.name}${josa(src.name, '이', '가')} 이어져`} ${subj(r.name)} ${r.kind === 'new' ? '생겼어요' : '한 단계 자랐어요'}`,
       objectId: r.obj.id,
       sourceSeq: item.seq,
     });

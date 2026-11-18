@@ -27,6 +27,8 @@ export interface MemoryMoment {
   text: string | null;
   /** hidden: 확정 후 지운 기록, edited: 그 뒤에 기록을 고침 */
   entryState: 'ok' | 'hidden' | 'edited';
+  /** 출처 기록 날짜(date)와 실제로 어항에 나타난 날이 다르면 그날(0.3.0 미뤄 둔 흔적) */
+  appearedOn?: string;
 }
 
 export interface ObjectMemory {
@@ -96,7 +98,12 @@ export function memoryOf(snapshots: readonly Snapshot[], entries: readonly Entry
     const s = chain[i]!;
     // 미뤄 둔 흔적: 원래 기록을 보여 준다(문구는 놓일 때의 것)
     const src = c?.sourceSeq !== undefined ? bySeq.get(c.sourceSeq) : undefined;
-    if (src) return momentOf(src, kind === 'born' ? 'born' : 'grew', c, entryMap);
+    if (src) {
+      const m = momentOf(src, kind === 'born' ? 'born' : 'grew', c, entryMap);
+      const shown = s.kind === 'finale' ? finaleMoment(s, c, prevDateAt(i), timeZone)?.date : s.input?.localDate;
+      if (m && shown && shown !== m.date) m.appearedOn = shown;
+      return m;
+    }
     return s.kind === 'finale' ? finaleMoment(s, c, prevDateAt(i), timeZone) : momentOf(s, kind, c, entryMap);
   };
   for (let i = Math.max(bornIndex, 1); i < chain.length; i++) {

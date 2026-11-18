@@ -53,16 +53,80 @@ describe('감정 사전(0.3.0): 고정 id·표시명·옛 이름', () => {
 });
 
 describe('감정 흔적: 읽은 쪽수에 비례', () => {
-  it('15쪽마다 1개, 나머지 쪽은 다음 기록으로 이어진다', () => {
+  it('같은 감정 15쪽마다 1개, 나머지 쪽은 그 감정에 모여 다음 기록으로 이어진다', () => {
     const s = new TankSession(cfg(null));
     s.addEntry(e(0, 14, ['기쁨']), 1);
     expect(traces(s)).toHaveLength(0);
-    s.addEntry(e(1, 1, ['기쁨']), 2); // 누적 15쪽
+    s.addEntry(e(1, 1, ['기쁨']), 2); // 기쁨 누적 15쪽
     expect(traces(s)).toHaveLength(1);
-    expect(s.head.ledger.trace!.pages).toBe(0);
-    s.addEntry(e(2, 44, ['그리움']), 3); // 44쪽 → 2개, 14쪽 남음
+    expect(s.head.ledger.trace!.buckets['emo.joy']).toBeUndefined();
+    s.addEntry(e(2, 44, ['그리움']), 3); // 44쪽 → 2개, 그리움에 14쪽 남음
     expect(traces(s, sym('그리움'))).toHaveLength(2);
-    expect(s.head.ledger.trace!.pages).toBe(14);
+    expect(s.head.ledger.trace!.buckets['emo.longing']).toEqual([{ seq: 3, date: '2026-01-03', pages: 14 }]);
+  });
+
+  it('리뷰 회귀 A: 슬픔 14쪽 → 기쁨 1쪽은 감정을 섞지 않아 흔적이 생기지 않는다', () => {
+    const s = new TankSession(cfg(null));
+    s.addEntry(e(0, 14, ['슬픔']), 1);
+    s.addEntry(e(1, 1, ['기쁨']), 2);
+    expect(traces(s)).toHaveLength(0);
+    expect(s.head.ledger.trace!.buckets['emo.sad']![0]!.pages).toBe(14);
+    expect(s.head.ledger.trace!.buckets['emo.joy']![0]!.pages).toBe(1);
+  });
+
+  it('리뷰 회귀 B: 감정 없음 14쪽 → 기쁨 1쪽이면 기쁨 흔적이 생기지 않는다(감정 없는 쪽수는 모으지 않음)', () => {
+    const s = new TankSession(cfg(null));
+    s.addEntry(e(0, 14, []), 1);
+    s.addEntry(e(1, 1, ['기쁨']), 2);
+    expect(traces(s)).toHaveLength(0);
+    expect(Object.keys(s.head.ledger.trace!.buckets)).toEqual(['emo.joy']);
+  });
+
+  it('리뷰 회귀: 같은 날 다른 감정 7쪽 + 8쪽은 섞이지 않고, 같은 감정 7쪽 + 8쪽은 모여 1개(출처 = 더 많이 낸 기록)', () => {
+    const a = new TankSession(cfg(null));
+    a.addEntry(e(0, 7, ['설렘']), 1);
+    a.addEntry(e(0, 8, ['평온']), 2);
+    expect(traces(a)).toHaveLength(0);
+    const b = new TankSession(cfg(null));
+    b.addEntry(e(0, 7, ['설렘'], '앞부분'), 1);
+    b.addEntry(e(0, 8, ['설렘'], '뒷부분'), 2);
+    expect(traces(b)).toHaveLength(1);
+    const c = b.head.changes.find((x) => traces(b).some((o) => o.id === x.objectId))!;
+    expect(c.text).toBe('1월 1일부터 모인 설렘에서 반짝이 진주조개가 생겼어요');
+    expect(c.sourceSeq).toBeUndefined(); // 출처 = 8쪽을 낸 이 기록
+    const m = memoryOf(b.snapshots, b.entries, b.head.id, c.objectId!)!;
+    expect(m.born!.note).toBe('뒷부분');
+  });
+
+  it('리뷰 회귀: 14쪽 + 1쪽 → 출처는 14쪽 기록. 그 기록을 고치면 생길 때의 한마디, 지우면 날짜만', () => {
+    const run = () => {
+      const s = new TankSession(cfg(null));
+      s.addEntry(e(0, 14, ['그리움'], '편지를 읽다가'), Date.UTC(2026, 0, 1, 12));
+      s.addEntry(e(1, 1, ['그리움'], '조금'), Date.UTC(2026, 0, 2, 12));
+      return s;
+    };
+    const s = run();
+    const c = s.head.changes.find((x) => traces(s).some((o) => o.id === x.objectId))!;
+    expect(c.sourceSeq).toBe(1);
+    expect(c.text.startsWith('1월 1일부터 모인 그리움에서')).toBe(true);
+    let m = memoryOf(s.snapshots, s.entries, s.head.id, c.objectId!)!;
+    expect(m.born!.date).toBe('2026-01-01');
+    expect(m.born!.note).toBe('편지를 읽다가');
+    expect(m.born!.appearedOn).toBe('2026-01-02');
+    // 확정된 첫 기록의 한마디를 고침 → 카드는 생길 때의 한마디 + 고침 표시
+    const first = s.entries[0]!;
+    s.editEntry(first.id, { note: '고친 말' }, first.rev, Date.UTC(2026, 0, 3));
+    m = memoryOf(s.snapshots, s.entries, s.head.id, c.objectId!)!;
+    expect(m.born!.note).toBe('편지를 읽다가');
+    expect(m.born!.entryState).toBe('edited');
+    // 지움(숨김) → 날짜만
+    const s2 = run();
+    s2.addEntry(e(2, 0, ['그리움']), Date.UTC(2026, 0, 3, 12));
+    s2.deleteEntry(s2.entries[0]!.id, Date.UTC(2026, 0, 3, 13));
+    m = memoryOf(s2.snapshots, s2.entries, s2.head.id, c.objectId!)!;
+    expect(m.born!.entryState).toBe('hidden');
+    expect(m.born!.note).toBe('');
+    expect(m.born!.chips).toEqual([]);
   });
 
   it('하루 최대 3개, 넘친 몫은 원래 감정·기록과 함께 미뤄 두었다가 다음 날 먼저 놓는다', () => {
@@ -153,7 +217,7 @@ describe('완독 채움: 쪽수만큼 풍성하게', () => {
       expect(before).toBeLessThan(target);
       expect(tr.made).toBe(target);
       // 완독 때 생긴 흔적 = 미뤄 둔 흔적(원래 출처, '…이 이어져') + 비율 채움('그동안의 …')
-      const fill = s.head.changes.filter((c) => c.level === 'finale' && c.objectId && (c.text.startsWith('그동안의') || c.text.includes('이 이어져') || c.text.includes('가 이어져')));
+      const fill = s.head.changes.filter((c) => c.level === 'finale' && c.objectId && (c.text.startsWith('그동안의') || c.text.includes('이 이어져') || c.text.includes('가 이어져') || c.text.includes('부터 모인')));
       expect(fill.length).toBe(target - before);
       const longing = fill.filter((c) => c.text.includes('그리움')).length;
       const joy = fill.filter((c) => c.text.includes('기쁨')).length;
@@ -200,5 +264,24 @@ describe('리뷰 회귀: 완독 채움과 기억 연결', () => {
       const all = [m.born!, ...m.grew];
       expect(all.length).toBe((o.stage ?? 1)); // 생김 1 + 자람(단계 - 1)
     }
+  });
+
+  it('리뷰 회귀: 15쪽 경계 이월·완독에서도 같은 귀속 — 상한으로 미룬 "모인" 흔적은 출처 그대로, 감정별 나머지는 섞지 않고 "그동안의"로만 채움', () => {
+    const s = new TankSession(cfg(150));
+    s.addEntry(e(0, 45, ['외로움'], '', 45), 1); // 오늘 3개(상한)
+    s.addEntry(e(0, 7, ['평온'], '', 52), 2);
+    s.addEntry(e(0, 8, ['평온'], '', 60), 3); // 평온 15쪽 → 1개 몫, 상한이라 미룸(출처 = 8쪽 기록)
+    expect(s.head.ledger.trace!.queue).toEqual([{ emotion: 'emo.calm', seq: 3, date: '2026-01-01', from: '2026-01-01' }]);
+    s.addEntry(e(1, 14, ['슬픔'], '', 74), 4); // 다음 날: 미룬 평온 1개 놓임, 슬픔 14쪽은 남음
+    const late = s.head.changes.find((c) => c.sourceSeq === 3)!;
+    expect(late.text).toBe('1월 1일부터 모인 평온에서 별빛 해파리가 생겼어요');
+    s.addEntry(e(2, 14, ['기쁨'], '', 88), 5); // 기쁨 14쪽도 남음(슬픔과 섞이지 않음)
+    expect(traces(s, sym('슬픔'))).toHaveLength(0);
+    expect(traces(s, sym('기쁨'))).toHaveLength(0);
+    s.finalize('completed', Date.UTC(2026, 0, 4));
+    const fin = s.head.changes.filter((c) => c.level === 'finale' && c.objectId && traces(s).some((o) => o.id === c.objectId));
+    expect(fin.every((c) => c.text.startsWith('그동안의 '))).toBe(true); // 남은 쪽은 특정 기록인 척하지 않음
+    expect(s.head.ledger.trace!.made).toBe(10); // 150 ÷ 15
+    expect(s.checkInvariants({ deep: true })).toEqual([]);
   });
 });

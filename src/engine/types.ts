@@ -108,10 +108,13 @@ export interface Ledger {
 }
 
 export interface TraceLedger {
-  /** 흔적으로 아직 바꾸지 않은 쪽수(15쪽 미만 나머지) */
-  pages: number;
+  /**
+   * 감정별로 따로 모으는 쪽수(15쪽이 차기 전 나머지). 감정 id → 기여한 기록들(먼저 온 것부터).
+   * 서로 다른 감정의 쪽수는 섞지 않는다. 감정을 알 수 없는 기록의 쪽수는 모으지 않는다(완독 목표에만 반영).
+   */
+  buckets: Record<string, Array<{ seq: number; date: ISODate; pages: number }>>;
   /** 하루 상한으로 미뤄 둔 흔적. 원래 기록의 감정·순번·날짜를 함께 보관해 나중에 놓여도 출처가 바뀌지 않는다(먼저 미룬 것부터) */
-  queue: Array<{ emotion: string; seq: number; date: ISODate }>;
+  queue: Array<{ emotion: string; seq: number; date: ISODate; from?: ISODate }>;
   day: { date: ISODate | null; count: number };
   /** 기록한 대표 감정 횟수(감정 id → 횟수). 완독 채움 비율에 쓴다 */
   emotionCounts: Record<string, number>;
