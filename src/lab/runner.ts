@@ -1,3 +1,4 @@
+import { ENGINE_VERSION, TRACE, hasEmotionTraces, type EngineVersion } from '../engine/config';
 import { moodSpreadOf } from '../render/atmosphere';
 import { addDays } from '../engine/dates';
 import { hashOf } from '../engine/random';
@@ -32,9 +33,10 @@ function toNewEntry(e: ScriptedEntry): NewEntry {
   return { clientId: e.clientId, localDate: e.localDate, amount: e.amount, progressValue: e.progressValue, moodChips: [...e.moodChips], note: e.note };
 }
 
-export function runTank(t: SampleTank, origin: DataOrigin = 'sample'): RunResult {
+/** engineVersion: 어항을 계산할 엔진 버전(기본은 지금 엔진). 0.2.0 동작 고정 확인(frozen-0.2.0.json)에도 쓴다 */
+export function runTank(t: SampleTank, origin: DataOrigin = 'sample', engineVersion: EngineVersion = ENGINE_VERSION): RunResult {
   if (origin === 'sample') assertSampleTank(t);
-  const s = new TankSession(t.cfg, t.restWeekdays ?? 0);
+  const s = new TankSession(t.cfg, t.restWeekdays ?? 0, engineVersion);
   const byDate = new Map<string, ScriptedEntry[]>();
   for (const e of t.entries) byDate.set(e.localDate, [...(byDate.get(e.localDate) ?? []), e]);
 
@@ -112,9 +114,11 @@ function ruleChecks(s: TankSession, frames: DayFrame[], events: LabEvent[], inv:
     for (const e of events) if (pred(e)) m.set(e.day, (m.get(e.day) ?? 0) + 1);
     return Math.max(0, ...m.values());
   };
-  const newMax = perDay((e) => e.isNew === true && e.level !== 'finale');
-  out.push({ id: 'R1', name: '새 오브젝트 하루 1개 이하(완성 제외)', ok: newMax <= 1, detail: `하루 최대 ${newMax}개` });
-  const majorMax = perDay((e) => e.level === 'growth' || e.level === 'special');
+  // 0.3.0 감정 흔적은 기본 생태계와 따로 센다(쪽수 비례, 하루 최대 TRACE.dailyMax개)
+  const trace = (e: LabEvent) => e.kind === 'emotion';
+  const newMax = perDay((e) => e.isNew === true && e.level !== 'finale' && !trace(e));
+  out.push({ id: 'R1', name: '기본 생태계 새 오브젝트 하루 1개 이하(완성 제외)', ok: newMax <= 1, detail: `하루 최대 ${newMax}개` });
+  const majorMax = perDay((e) => (e.level === 'growth' || e.level === 'special') && !trace(e));
   out.push({ id: 'R2', name: '주요 변화(성장·특별) 하루 1회 이하', ok: majorMax <= 1, detail: `하루 최대 ${majorMax}회` });
   const usedMax = Math.max(0, ...frames.map((f) => f.lightUsed));
   out.push({ id: 'R3', name: '조명 이동 하루 30% 이내', ok: usedMax <= 0.3 + 1e-9, detail: `하루 최대 ${Math.round(usedMax * 100)}%` });
@@ -145,7 +149,7 @@ function ruleChecks(s: TankSession, frames: DayFrame[], events: LabEvent[], inv:
     multi++;
     const last = list[list.length - 1]!;
     const prev = list[list.length - 2]!;
-    const mood = analyzeMood(last.input!.moodChips, last.input!.note);
+    const mood = analyzeMood(last.input!.moodChips, last.input!.note, s.engineVersion);
     if (mood.confidence <= 0) continue;
     const d = (st: TankState) => Math.hypot(st.light.temp - mood.temp, st.light.energy - mood.energy);
     const capped = last.ledger.dayLightShift.used >= 0.3 - 1e-9 && prev.ledger.dayLightShift.used >= 0.3 - 1e-9;
@@ -155,6 +159,10 @@ function ruleChecks(s: TankSession, frames: DayFrame[], events: LabEvent[], inv:
     out.push({ id: 'R5', name: '여러 번 기록한 날, 마지막 기록이 그 감정 쪽으로 분위기를 옮김', ok: bad.length === 0, detail: bad.length ? `어긋난 날: ${bad.join(', ')}` : `${multi}일 모두 마지막 감정 쪽으로 이동` });
   }
   out.push({ id: 'R6', name: '불변 규칙 I1~I4(전체 재계산 포함)', ok: inv.length === 0, detail: inv.length ? inv.slice(0, 2).join(' / ') : '위반 없음' });
+  if (hasEmotionTraces(s.engineVersion)) {
+    const traceMax = perDay((e) => trace(e) && e.level !== 'finale');
+    out.push({ id: 'R7', name: `감정 흔적 하루 ${TRACE.dailyMax}개 이하(완성 채움 제외)`, ok: traceMax <= TRACE.dailyMax, detail: `하루 최대 ${traceMax}개` });
+  }
   return out;
 }
 
@@ -180,8 +188,8 @@ export function eventsOf(snaps: readonly Snapshot[], snapDay: Map<string, number
   return out;
 }
 
-export function runScenario(sc: SampleScenario): RunResult[] {
-  return sc.tanks.map((t) => runTank(t, 'sample'));
+export function runScenario(sc: SampleScenario, engineVersion: EngineVersion = ENGINE_VERSION): RunResult[] {
+  return sc.tanks.map((t) => runTank(t, 'sample', engineVersion));
 }
 
 export interface SuiteResult {

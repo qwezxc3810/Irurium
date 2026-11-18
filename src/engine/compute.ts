@@ -1,9 +1,10 @@
-import { CAPS, EFFECT_CAP, ENGINE_VERSION, FISH_SPACE, GROWTH, LIGHT_SHIFT, SCORE, SLOTS, SPECIAL } from './config';
+import { CAPS, EFFECT_CAP, ENGINE_VERSION, FISH_SPACE, GROWTH, LIGHT_SHIFT, SCORE, SLOTS, SPECIAL, TRACE, hasEmotionTraces, type EngineVersion } from './config';
 import { EFFECTS, elementOf, themeOf, type ElementDef } from './catalog';
-import { analyzeMood, clamp, round } from './mood';
+import { analyzeMood, clamp, emotionById, representativeEmotion, round, type EmotionDef } from './mood';
+import { daysBetween } from './dates';
 import { rngFor, type Rng } from './random';
 import type {
-  Change, DayMood, EngineInput, EngineOutput, Layer, Ledger, MoodVec, ObjectKind, PlacedObject, TankConfig, TankState,
+  Change, DayMood, EngineInput, EngineOutput, Layer, Ledger, MoodVec, ObjectKind, PlacedObject, TankConfig, TankState, TraceLedger,
 } from './types';
 
 /**
@@ -45,16 +46,21 @@ function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
+/**
+ * version: 어항의 엔진 버전(0번 스냅샷). 0.2.0이면 0.2.0 규칙 그대로(골든·검증실 샘플 해시로 고정),
+ * 0.3.0이면 그 위에 감정 흔적(docs/EMOTION_DICTIONARY.md)을 더한다.
+ */
 export function computeSnapshot(
   base: { state: TankState; ledger: Ledger },
   input: EngineInput,
   cfg: TankConfig,
+  version: EngineVersion = ENGINE_VERSION,
 ): EngineOutput {
   const state = clone(base.state);
   const ledger = clone(base.ledger);
   const changes: Change[] = [];
   const rng = rngFor(cfg.seed, input.seq);
-  const mood = analyzeMood(input.moodChips, input.note);
+  const mood = analyzeMood(input.moodChips, input.note, version);
   const date = input.localDate;
   const firstOfDay = ledger.lastEntryDate !== date;
 
@@ -96,12 +102,16 @@ export function computeSnapshot(
     changes.push({ level: 'info', text: '특별한 변화가 기다리고 있어요. 다음 날 첫 기록에서 나타나요.' });
   }
 
+  // ── 6. (0.3.0) 감정 흔적: 읽은 쪽수에 비례, 하루 최대 TRACE.dailyMax개. 기본 생태계(위 5)와 따로 센다 ──
+  // 기본 생태계 배치와 섞이지 않게 난수 흐름을 따로 쓴다
+  if (hasEmotionTraces(version)) applyTraces(state, ledger, input, mood, cfg, rngFor(cfg.seed, input.seq, 7), changes);
+
   ledger.lastEntryDate = date;
   return { state, ledger, changes };
 }
 
-/** 완성 스냅샷. 하루 1회 제한의 예외. */
-export function computeFinale(base: { state: TankState; ledger: Ledger }, cfg: TankConfig, seq: number): EngineOutput {
+/** 완성 스냅샷. 하루 1회 제한의 예외. 0.3.0이면 감정 흔적이 완성 목표보다 적을 때 기록한 감정 비율대로 채운다 */
+export function computeFinale(base: { state: TankState; ledger: Ledger }, cfg: TankConfig, seq: number, version: EngineVersion = ENGINE_VERSION): EngineOutput {
   const state = clone(base.state);
   const ledger = clone(base.ledger);
   const changes: Change[] = [];
@@ -128,6 +138,7 @@ export function computeFinale(base: { state: TankState; ledger: Ledger }, cfg: T
   state.light = { temp: round(clamp(state.light.temp + 0.1)), energy: state.light.energy };
   state.effects = [EFFECTS.starsBright, EFFECTS.lightray];
   state.completed = true;
+  if (hasEmotionTraces(version)) fillTracesAtFinale(state, ledger, cfg, rngFor(cfg.seed, seq, 98), seq, changes);
   changes.push({ level: 'finale', text: '최종 조명이 정해지고 어항이 완성되었어요' });
   return { state, ledger, changes };
 }
@@ -246,8 +257,10 @@ function applyGrowth(state: TankState, ledger: Ledger, mood: MoodVec, cfg: TankC
     .sort((a, b) => b.s - a.s);
 
   // 아직 어항이 비어 있으면 새 요소를, 어느 정도 찼으면 절반은 기존 요소를 키운다
-  const fill = state.objects.length / (CAPS.fish + CAPS.plant + CAPS.rock);
-  const preferGrow = state.objects.length > 0 && rng() < fill;
+  // 감정 흔적(0.3.0)은 기본 생태계와 따로 센다(0.2.0 어항엔 흔적이 없어 결과가 같다)
+  const eco = state.objects.filter((o) => o.kind !== 'emotion').length;
+  const fill = eco / (CAPS.fish + CAPS.plant + CAPS.rock);
+  const preferGrow = eco > 0 && rng() < fill;
   const best = scored[0];
   if (best && !preferGrow) {
     const obj = placeNew(state, ledger, best.e, rng, input.seq, target.temp);
@@ -263,12 +276,13 @@ function applyGrowth(state: TankState, ledger: Ledger, mood: MoodVec, cfg: TankC
 function growExisting(state: TankState, ledger: Ledger, target: { temp: number; energy: number }, cfg: TankConfig, input: EngineInput, mood: MoodVec, changes: Change[]) {
   const growable = state.objects.filter(
     (o) =>
+      o.kind !== 'emotion' &&
       o.scale < GROWTH.maxScale &&
       (o.kind !== 'fish' || fishFits(state, cfg.themeId, (elementOf(cfg.themeId, o.el)?.bodyHeight ?? 0) * GROWTH.step, true)),
   );
   if (growable.length === 0) {
     changes.push({ level: 'growth', text: '어항이 가득 차서, 생물들의 색이 조금 깊어졌어요' });
-    for (const o of state.objects) o.tint = round(clamp(o.tint + (target.temp - o.tint) * 0.1));
+    for (const o of state.objects) if (o.kind !== 'emotion') o.tint = round(clamp(o.tint + (target.temp - o.tint) * 0.1));
     return;
   }
   const pick = growable
@@ -292,12 +306,15 @@ function placeNew(state: TankState, ledger: Ledger, e: ElementDef, rng: Rng, seq
     x = 150 + Math.floor(rng() * 700);
   } else {
     const slot = e.kind === 'rock' ? SLOTS.rock : e.kind === 'symbol' ? SLOTS.symbol : layer === 'front' ? SLOTS.plantFront : SLOTS.plantBack;
-    const same = state.objects.filter((o) => o.layer === layer && o.kind !== 'fish');
+    const same = state.objects.filter((o) => o.layer === layer && o.kind !== 'fish' && o.kind !== 'emotion');
+    // 감정 흔적(0.3.0)과는 가까운 높이에서만 겹치지 않게(0.2.0 어항엔 흔적이 없어 결과가 같다)
+    const traces = state.objects.filter((o) => o.kind === 'emotion');
+    const clearOfTraces = (cx: number) => traces.every((o) => Math.abs(o.y - slot.y) >= SLOTS.emotion.nearDy || Math.abs(o.x - cx) >= SLOTS.emotion.minDist);
     let placed = false;
     for (let attempt = 0; attempt < SLOTS.retries && !placed; attempt++) {
       const sx = slot.xs[Math.floor(rng() * slot.xs.length)] ?? slot.xs[0];
       const cx = sx + Math.round((rng() * 2 - 1) * SLOTS.jitter);
-      if (same.every((o) => Math.abs(o.x - cx) >= slot.minGap)) {
+      if (same.every((o) => Math.abs(o.x - cx) >= slot.minGap) && clearOfTraces(cx)) {
         x = cx;
         y = slot.y;
         placed = true;
@@ -318,6 +335,144 @@ function placeNew(state: TankState, ledger: Ledger, e: ElementDef, rng: Rng, seq
   };
   state.objects.push(obj);
   return obj;
+}
+
+// ───────────────────────── 감정 흔적 (0.3.0) ─────────────────────────
+
+function newTrace(): TraceLedger {
+  return { pages: 0, owed: 0, day: { date: null, count: 0 }, emotionCounts: {}, made: 0, grownOn: {} };
+}
+
+/** 감정 흔적 자리: 먼 줄·바닥 앞줄의 칸 중 다른 요소와 겹치지 않는 곳을 무작위 순서로 찾는다 */
+function placeTrace(state: TankState, ledger: Ledger, sym: ElementDef, rng: Rng, seq: number, tint: number): PlacedObject | null {
+  const E = SLOTS.emotion;
+  const spots = E.rows.flatMap((row) => E.xs.map((x) => ({ x, y: row.y, layer: row.layer as Layer })));
+  for (let i = spots.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [spots[i], spots[j]] = [spots[j]!, spots[i]!];
+  }
+  const others = state.objects.filter((o) => o.kind !== 'fish');
+  for (const sp of spots) {
+    const x = sp.x + Math.round((rng() * 2 - 1) * 12);
+    if (others.every((o) => Math.abs(o.y - sp.y) >= E.nearDy || Math.abs(o.x - x) >= E.minDist)) {
+      const obj: PlacedObject = {
+        id: `o${ledger.nextObjectNo++}`, el: sym.id, kind: 'emotion', layer: sp.layer, x, y: sp.y,
+        scale: TRACE.baseScale, tint: round(clamp(tint)), bornSeq: seq, stage: 1,
+      };
+      state.objects.push(obj);
+      return obj;
+    }
+  }
+  return null;
+}
+
+type TraceResult = { kind: 'new' | 'grow'; obj: PlacedObject; name: string } | { kind: 'full'; name: string };
+
+/** 흔적 하나: 같은 감정이 최대 개수 미만이면 새로 놓고, 아니면(또는 자리가 없으면) 가장 덜 자란 것을 키운다 */
+function addTrace(state: TankState, t: TraceLedger, ledger: Ledger, emo: EmotionDef, cfg: TankConfig, rng: Rng, seq: number, date: string | null, finale: boolean): TraceResult {
+  const sym = elementOf(cfg.themeId, emo.symbol)!;
+  const same = state.objects.filter((o) => o.kind === 'emotion' && o.el === sym.id);
+  const maxPer = finale ? TRACE.finalePerEmotionMax : TRACE.perEmotionMax;
+  if (same.length < maxPer && countKind(state, 'emotion') < CAPS.emotion) {
+    const obj = placeTrace(state, ledger, sym, rng, seq, emo.vec.temp);
+    if (obj) {
+      t.made += 1;
+      return { kind: 'new', obj, name: sym.name };
+    }
+  }
+  const cooled = (id: string) => finale || !date || !t.grownOn[id] || daysBetween(t.grownOn[id]!, date) >= TRACE.growCooldownDays;
+  const pick = same
+    .filter((o) => (o.stage ?? 1) < TRACE.maxStage && cooled(o.id))
+    .sort((a, b) => (a.stage ?? 1) - (b.stage ?? 1) || a.bornSeq - b.bornSeq || a.id.localeCompare(b.id))[0];
+  if (pick) {
+    pick.stage = (pick.stage ?? 1) + 1;
+    pick.scale = round(TRACE.baseScale + (pick.stage - 1) * TRACE.stageScaleStep);
+    if (date) t.grownOn[pick.id] = date;
+    t.made += 1;
+    return { kind: 'grow', obj: pick, name: sym.name };
+  }
+  return { kind: 'full', name: sym.name };
+}
+
+function applyTraces(state: TankState, ledger: Ledger, input: EngineInput, mood: MoodVec, cfg: TankConfig, rng: Rng, changes: Change[]) {
+  const t = (ledger.trace ??= newTrace());
+  const date = input.localDate;
+  if (t.day.date !== date) t.day = { date, count: 0 };
+  const emo = representativeEmotion(input.moodChips, mood);
+  if (emo) t.emotionCounts[emo.id] = (t.emotionCounts[emo.id] ?? 0) + 1;
+  const pages = t.pages + Math.max(0, input.amount);
+  const earned = Math.floor(pages / TRACE.pagesPerTrace);
+  t.pages = pages % TRACE.pagesPerTrace;
+  const pool = t.owed + earned;
+  // 감정을 알 수 없는 기록은 흔적을 만들지 않고 몫만 쌓아 둔다(다음 감정 기록이나 완독 채움에서 씀)
+  if (!emo) {
+    t.owed = pool;
+    return;
+  }
+  const n = Math.min(Math.max(0, TRACE.dailyMax - t.day.count), pool);
+  let used = 0;
+  let shone = false;
+  for (let i = 0; i < n; i++) {
+    const r = addTrace(state, t, ledger, emo, cfg, rng, input.seq, date, false);
+    used += 1;
+    if (r.kind === 'full') {
+      // 더 놓을 자리도 키울 흔적도 없으면 반짝임만(몫은 쓴 것으로 친다)
+      if (!shone) changes.push({ level: 'daily', text: `${emo.name}의 흔적들이 반짝였어요` });
+      shone = true;
+      continue;
+    }
+    changes.push({
+      level: 'growth',
+      text: r.kind === 'new' ? `${quote(input.note)}${emo.name}에서 ${subj(r.name)} 생겼어요` : `${quote(input.note)}${emo.name}에서 ${subj(r.name)} 한 단계 자랐어요`,
+      objectId: r.obj.id,
+    });
+  }
+  t.day.count += used;
+  t.owed = pool - used;
+}
+
+/** 완독 채움: 목표 = max(최소, 총 쪽수 ÷ 기준). 모자란 만큼 기록한 감정 비율(최대 나머지 방식)로 나눠 놓는다. 쿨다운·하루 상한 없음 */
+function fillTracesAtFinale(state: TankState, ledger: Ledger, cfg: TankConfig, rng: Rng, seq: number, changes: Change[]) {
+  const t = ledger.trace;
+  if (!t) return;
+  const total = cfg.goal.totalUnits ?? ledger.maxProgress;
+  const target = Math.max(TRACE.targetMin, Math.floor(total / TRACE.targetDivisor));
+  const missing = target - t.made;
+  const counts = Object.entries(t.emotionCounts).filter(([, n]) => n > 0).sort((a, b) => a[0].localeCompare(b[0]));
+  const sum = counts.reduce((a, [, n]) => a + n, 0);
+  if (missing <= 0 || sum === 0) return;
+  const quota = counts.map(([id, n]) => ({ id, exact: (missing * n) / sum, n: Math.floor((missing * n) / sum) }));
+  let rest = missing - quota.reduce((a, q) => a + q.n, 0);
+  for (const q of [...quota].sort((a, b) => b.exact - b.n - (a.exact - a.n) || a.id.localeCompare(b.id))) {
+    if (rest <= 0) break;
+    q.n += 1;
+    rest -= 1;
+  }
+  const order = quota.sort((a, b) => b.n - a.n || a.id.localeCompare(b.id));
+  const full = new Set<string>();
+  const one = (id: string): boolean => {
+    const emo = emotionById(id);
+    if (!emo || full.has(id)) return false;
+    const r = addTrace(state, t, ledger, emo, cfg, rng, seq, null, true);
+    if (r.kind === 'full') {
+      full.add(id);
+      return false;
+    }
+    changes.push({
+      level: 'finale',
+      text: r.kind === 'new' ? `그동안의 ${emo.name}${josa(emo.name, '이', '가')} 모여 ${subj(r.name)} 생겼어요` : `그동안의 ${emo.name}${josa(emo.name, '이', '가')} 모여 ${subj(r.name)} 한 단계 자랐어요`,
+      objectId: r.obj.id,
+    });
+    return true;
+  };
+  // 1) 감정 비율대로
+  let left = 0;
+  for (const q of order) for (let i = 0; i < q.n; i++) if (!one(q.id)) { left += q.n - i; break; }
+  // 2) 가득 찬 감정의 남은 몫은 다른 기록한 감정에 차례로 나눈다(공간이 다 차면 멈춤)
+  while (left > 0 && order.some((q) => !full.has(q.id))) {
+    for (const q of order) if (left > 0 && one(q.id)) left -= 1;
+  }
+  t.owed = 0;
 }
 
 // ───────────────────────── 특별 변화 ─────────────────────────

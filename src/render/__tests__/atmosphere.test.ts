@@ -144,7 +144,7 @@ describe('렌더러 연결과 보호', () => {
 
   it('기본 렌더링은 감정 배경(atmos-2), 엔진 버전·골든 해시는 그대로', () => {
     expect(RENDER_STYLE).toBe('atmos-2');
-    expect(ENGINE_VERSION).toBe('0.2.0');
+    expect(ENGINE_VERSION).toBe('0.3.0');
     expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe(GOLDEN_REPLAY[ENGINE_VERSION]);
   });
 

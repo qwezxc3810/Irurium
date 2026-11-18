@@ -18,6 +18,7 @@ import { mulberry32, seedFromString } from '../engine/random';
 import type { PlacedObject, TankState } from '../engine/types';
 import { applyOverrides, loadManifest, loadTextures, type AssetOverrides, type LoadedAssets } from '../assets/manifest';
 import { FishView } from './FishView';
+import { TraceView } from './TraceView';
 import { Tween, tintFor } from './util';
 import { DISPLAY, displayScale, fishLaneLayout, overlaps, type Box } from './display';
 
@@ -66,6 +67,8 @@ export class AquariumRenderer {
   };
   private fish = new Map<string, FishView>();
   private statics = new Map<string, StaticView>();
+  /** 0.3.0 감정 흔적(임시 도형) */
+  private traces = new Map<string, TraceView>();
   private bubbles: Bubble[] = [];
   private bubbleTimer = 0;
   private lightOverlay = new Graphics();
@@ -396,8 +399,9 @@ export class AquariumRenderer {
   info() {
     const r = this.app.renderer;
     const c = this.app.canvas;
-    const kinds = { fish: this.fish.size, plant: 0, rock: 0, symbol: 0 };
+    const kinds = { fish: this.fish.size, plant: 0, rock: 0, symbol: 0, emotion: 0 };
     for (const v of this.statics.values()) if (v.obj.kind !== 'fish') kinds[v.obj.kind]++;
+    kinds.emotion = this.traces.size;
     return {
       quality: this.quality,
       dpr: window.devicePixelRatio || 1,
@@ -435,6 +439,8 @@ export class AquariumRenderer {
     this.fish.clear();
     for (const v of this.statics.values()) v.sprite.destroy();
     this.statics.clear();
+    for (const v of this.traces.values()) v.destroy();
+    this.traces.clear();
     this.setState(state, { mossStage: opts.mossStage, reducedMotion: true, moodSpread: opts.moodSpread });
     this.layoutStillMotes();
     for (const f of this.fish.values()) f.settle(state);
@@ -498,9 +504,21 @@ export class AquariumRenderer {
     const ids = new Set(objects.map((o) => o.id));
     for (const [id, f] of this.fish) if (!ids.has(id)) { f.destroy(); this.fish.delete(id); }
     for (const [id, v] of this.statics) if (!ids.has(id)) { v.sprite.destroy(); this.statics.delete(id); }
+    for (const [id, v] of this.traces) if (!ids.has(id)) { v.destroy(); this.traces.delete(id); }
 
     const lanes = fishLaneLayout(objects, this.assets.manifest.elements);
     for (const obj of objects) {
+      if (obj.kind === 'emotion') {
+        const ex = this.traces.get(obj.id);
+        if (ex) { ex.update(obj); continue; }
+        const v = new TraceView(obj);
+        this.makeTappable(v.root, obj.id);
+        const layer = obj.layer === 'back' ? this.layers.back : this.layers.floor;
+        layer.addChild(v.root);
+        layer.children.sort((a, b) => a.y - b.y);
+        this.traces.set(obj.id, v);
+        continue;
+      }
       const spec = this.assets.manifest.elements[obj.el];
       const texture = this.tex(obj.el);
       if (!spec || !texture) continue;
@@ -549,6 +567,7 @@ export class AquariumRenderer {
     this.tapHandler = fn;
     for (const [id, f] of this.fish) this.makeTappable(f.root, id);
     for (const [id, v] of this.statics) this.makeTappable(v.sprite, id);
+    for (const [id, v] of this.traces) this.makeTappable(v.root, id);
   }
 
   private makeTappable(d: Container, objectId: string) {

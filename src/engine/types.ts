@@ -47,7 +47,8 @@ export interface EngineInput {
   note: string;
 }
 
-export type ObjectKind = 'fish' | 'plant' | 'rock' | 'symbol';
+/** emotion: 0.3.0 감정 흔적(감정 사전 상징) */
+export type ObjectKind = 'fish' | 'plant' | 'rock' | 'symbol' | 'emotion';
 export type Layer = 'back' | 'floor' | 'mid' | 'front';
 
 /** 어항 안에 놓인 오브젝트 하나. el은 카탈로그 id이고, 그림 파일은 렌더러가 매니페스트로 찾는다. */
@@ -63,6 +64,8 @@ export interface PlacedObject {
   /** -1(차갑게) ~ +1(따뜻하게). 렌더러가 색 보정에 쓴다. */
   tint: number;
   bornSeq: number;
+  /** 0.3.0 감정 흔적만: 자람 단계(1~TRACE.maxStage) */
+  stage?: number;
 }
 
 export interface TankState {
@@ -100,6 +103,22 @@ export interface Ledger {
   maxProgress: number;
   lastGrowthKind: ObjectKind | null;
   nextObjectNo: number;
+  /** 0.3.0 감정 흔적 원장(0.2.0 어항엔 없음) */
+  trace?: TraceLedger;
+}
+
+export interface TraceLedger {
+  /** 흔적으로 아직 바꾸지 않은 쪽수(15쪽 미만 나머지) */
+  pages: number;
+  /** 하루 상한·자리 부족으로 미뤄 둔 흔적 수 */
+  owed: number;
+  day: { date: ISODate | null; count: number };
+  /** 기록한 대표 감정 횟수(감정 id → 횟수). 완독 채움 비율에 쓴다 */
+  emotionCounts: Record<string, number>;
+  /** 실제로 놓이거나 자란 흔적 수 */
+  made: number;
+  /** 흔적별 마지막으로 자란 날(쿨다운) */
+  grownOn: Record<string, ISODate>;
 }
 
 export type ChangeLevel = 'daily' | 'growth' | 'special' | 'finale' | 'info';

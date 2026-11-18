@@ -50,7 +50,7 @@ describe('평가 어항: 한 가지만 다르게', () => {
   });
 
   it('엔진·그래픽은 그대로(엔진 0.2.0, 골든 해시, 그래픽 목록)', () => {
-    expect(ENGINE_VERSION).toBe('0.2.0');
+    expect(ENGINE_VERSION).toBe('0.3.0');
     expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe(GOLDEN_REPLAY[ENGINE_VERSION]);
     expect(Object.keys((manifest as { elements: Record<string, unknown> }).elements).sort()).toMatchSnapshot();
   });

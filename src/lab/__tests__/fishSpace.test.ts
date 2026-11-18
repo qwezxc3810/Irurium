@@ -27,7 +27,7 @@ function load(st: TankState, themeId: string): number {
 
 describe('물고기 헤엄 공간 예산(엔진 0.2.0)', () => {
   it('엔진 버전을 올렸다', () => {
-    expect(ENGINE_VERSION).toBe('0.2.0');
+    expect(ENGINE_VERSION).toBe('0.3.0');
   });
 
   it('모든 샘플 어항에서 물고기 몸 높이 합이 예산을 넘지 않는다(완성 전에는 대표 생물 자리를 남김)', () => {

@@ -189,7 +189,7 @@ describe('저사양 모드는 그리는 방식만 바꾼다', () => {
   });
 
   it('엔진 버전과 계산은 그대로다', () => {
-    expect(ENGINE_VERSION).toBe('0.2.0');
+    expect(ENGINE_VERSION).toBe('0.3.0');
     expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe(GOLDEN_REPLAY[ENGINE_VERSION]);
   });
 

@@ -1,6 +1,6 @@
 import type { MemoryMoment, ObjectMemory } from './memory';
 
-const KIND_ICON: Record<string, string> = { fish: '🐟', plant: '🌿', rock: '🪨', symbol: '✨' };
+const KIND_ICON: Record<string, string> = { fish: '🐟', plant: '🌿', rock: '🪨', symbol: '✨', emotion: '💠' };
 
 function dateLabel(iso: string) {
   const [, m, d] = iso.split('-');

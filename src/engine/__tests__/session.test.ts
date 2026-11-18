@@ -68,23 +68,29 @@ describe('어린왕자 14일', () => {
     const s = new TankSession(littlePrinceConfig());
     let t = T0;
     for (const e of littlePrinceEntries()) s.addEntry(e, (t += H));
-    const objs = s.head.state.objects;
+    // 기본 생태계 기준(0.3.0 감정 흔적은 쪽수 비례로 따로 센다: 140쪽이면 목표 9개)
+    const objs = s.head.state.objects.filter((o) => o.kind !== 'emotion');
     expect(objs.length).toBeGreaterThan(2);
     expect(objs.length).toBeLessThanOrEqual((CAPS.fish + CAPS.plant + CAPS.rock + CAPS.symbol) / 2);
   });
 });
 
 describe('하루 여러 번 기록', () => {
-  it('주요 변화는 하루 1회, 새 오브젝트도 하루 1개 이하', () => {
+  it('기본 생태계: 주요 변화는 하루 1회, 새 오브젝트도 하루 1개 이하 / 감정 흔적(0.3.0)은 따로 하루 최대 3개', () => {
     const s = new TankSession(littlePrinceConfig());
     const date = '2026-11-13';
     let t = T0;
-    const before = s.head.state.objects.length;
     for (let i = 1; i <= 5; i++) s.addEntry(entry(i, date, i % 2 ? ['설렘'] : ['쓸쓸함'], { progressValue: i * 30 }), (t += H));
-    const added = s.head.state.objects.length - before;
-    expect(added).toBeLessThanOrEqual(1);
-    const majors = s.snapshots.flatMap((x) => x.changes).filter((c) => c.level === 'growth' || c.level === 'special');
+    const objs = s.head.state.objects;
+    expect(objs.filter((o) => o.kind !== 'emotion').length).toBeLessThanOrEqual(1);
+    expect(objs.filter((o) => o.kind === 'emotion').length).toBeLessThanOrEqual(3);
+    const traceIds = new Set(objs.filter((o) => o.kind === 'emotion').map((o) => o.id));
+    const majors = s.snapshots.flatMap((x) => x.changes).filter((c) => (c.level === 'growth' || c.level === 'special') && !traceIds.has(c.objectId ?? ''));
     expect(majors.length).toBeLessThanOrEqual(1);
+    // 0.2.0 어항은 예전 규칙 그대로(새 오브젝트 하루 1개, 흔적 없음)
+    const old = new TankSession(littlePrinceConfig(), 0, '0.2.0');
+    for (let i = 1; i <= 5; i++) old.addEntry(entry(i, date, i % 2 ? ['설렘'] : ['쓸쓸함'], { progressValue: i * 30 }), (t += H));
+    expect(old.head.state.objects.length).toBeLessThanOrEqual(1);
   });
 
   it('조명 이동은 하루 합계 30%를 넘지 않는다', () => {

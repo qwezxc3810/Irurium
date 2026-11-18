@@ -1,4 +1,4 @@
-import { CONFIRM_AFTER_MS, ENGINE_VERSION } from './config';
+import { CONFIRM_AFTER_MS, ENGINE_VERSION, SUPPORTED_ENGINES, engineFor, type EngineVersion } from './config';
 import { computeFinale, computeSnapshot, genesisState } from './compute';
 import { maxDate } from './dates';
 import { computeMoss, setRestDays, type MossResult } from './moss';
@@ -59,11 +59,15 @@ export interface SessionData {
 export class TankSession {
   private d: SessionData;
 
-  constructor(cfg: TankConfig, restWeekdays = 0) {
+  /**
+   * engineVersion: 이 어항을 계산할 엔진 버전. 0번 스냅샷에 저장되고 어항이 끝날 때까지 바뀌지 않는다(2026-11-18 결정).
+   * 새 어항은 지금 엔진(ENGINE_VERSION). 0.2.0 어항은 0.2.0 규칙으로 끝까지 계산한다.
+   */
+  constructor(cfg: TankConfig, restWeekdays = 0, engineVersion: EngineVersion = ENGINE_VERSION) {
     const g = genesisState(cfg);
     const genesis: Snapshot = {
       id: 's0', seq: 0, entryId: null, baseId: null, kind: 'genesis', state: g.state, ledger: g.ledger, changes: [],
-      engineVersion: ENGINE_VERSION, inputHash: hashOf({ cfg }), input: null, cfg, contentHash: contentHashOf({ ...g, changes: [] }),
+      engineVersion, inputHash: hashOf({ cfg }), input: null, cfg, contentHash: contentHashOf({ ...g, changes: [] }),
       status: 'confirmed', confirmDueAt: null, confirmedAt: 0, confirmReason: 'genesis',
     };
     this.d = {
@@ -80,6 +84,8 @@ export class TankSession {
   get revisions(): readonly EntryRevision[] { return this.d.revisions; }
   get restRules(): readonly RestRule[] { return this.d.restRules; }
   get completionPrompt() { return this.d.completionPrompt; }
+  /** 이 어항의 엔진 버전(0번 스냅샷). 지원하지 않는 옛 버전이면 FALLBACK_ENGINE으로 이어서 계산 */
+  get engineVersion(): EngineVersion { return engineFor(this.d.snapshots.find((x) => x.kind === 'genesis')?.engineVersion); }
   get head(): Snapshot { return this.snap(this.d.headId); }
 
   snap(id: string): Snapshot {
@@ -174,11 +180,12 @@ export class TankSession {
   private computeDraft(entry: Entry, base: Snapshot): Snapshot {
     const input = toInput(entry);
     const cfg = this.d.cfg;
-    const out = computeSnapshot(base, input, cfg);
+    const v = this.engineVersion;
+    const out = computeSnapshot(base, input, cfg, v);
     return {
       id: `s${entry.seq}-r${entry.rev}`, seq: entry.seq, entryId: entry.id, baseId: base.id, kind: 'entry',
-      state: out.state, ledger: out.ledger, changes: out.changes, engineVersion: ENGINE_VERSION,
-      inputHash: hashOf({ base: base.inputHash, input, v: ENGINE_VERSION }),
+      state: out.state, ledger: out.ledger, changes: out.changes, engineVersion: v,
+      inputHash: hashOf({ base: base.inputHash, input, v }),
       input: JSON.parse(JSON.stringify(input)) as EngineInput, cfg, contentHash: contentHashOf(out),
       status: 'draft', confirmDueAt: null, confirmedAt: null, confirmReason: null,
     };
@@ -241,10 +248,11 @@ export class TankSession {
     const head = this.head;
     if (head.status === 'draft') this.confirm(head, 'finalized', now);
     if (kind === 'completed') {
-      const out = computeFinale(head, this.d.cfg, head.seq);
+      const v = this.engineVersion;
+      const out = computeFinale(head, this.d.cfg, head.seq, v);
       const s: Snapshot = {
         id: `s${head.seq}-finale`, seq: head.seq, entryId: null, baseId: head.id, kind: 'finale', state: out.state, ledger: out.ledger,
-        changes: out.changes, engineVersion: ENGINE_VERSION, inputHash: hashOf({ base: head.inputHash, finale: true, v: ENGINE_VERSION }),
+        changes: out.changes, engineVersion: v, inputHash: hashOf({ base: head.inputHash, finale: true, v }),
         input: null, cfg: this.d.cfg, contentHash: contentHashOf(out),
         status: 'confirmed', confirmDueAt: null, confirmedAt: now, confirmReason: 'finalized',
       };
@@ -301,11 +309,12 @@ export class TankSession {
       if (contentHashOf(s) !== s.contentHash) errors.push(`I3: ${s.id}의 내용이 만든 뒤 바뀜`);
       // I6: 입력 해시 체인(기준의 입력 해시 + 이 스냅샷의 입력 + 엔진 버전). 엔진 버전과 관계없이 확인할 수 있다
       if (expectedInputHash(s, s.baseId ? this.snap(s.baseId) : null) !== s.inputHash) errors.push(`I6: ${s.id}의 입력 해시가 맞지 않음(입력·기준·엔진 버전이 바뀜)`);
-      // I2: 저장된 입력으로 다시 계산하면 같은 결과. 지금 엔진 버전으로 만든 스냅샷만 확인한다.
-      // 그 전 버전 스냅샷은 그때 규칙으로 만든 결과가 정답이라, 지금 규칙으로 다시 계산해 비교하지 않는다(재계산·덮어쓰기 금지)
-      if (deep && s.baseId && s.engineVersion === ENGINE_VERSION) {
+      // I2: 저장된 입력으로 다시 계산하면 같은 결과. 계산 코드를 보관 중인 엔진 버전(SUPPORTED_ENGINES)은 그 버전 규칙으로 확인한다.
+      // 보관하지 않는 옛 버전 스냅샷은 그때 규칙으로 만든 결과가 정답이라, 다른 규칙으로 다시 계산해 비교하지 않는다(재계산·덮어쓰기 금지)
+      if (deep && s.baseId && isSupported(s.engineVersion)) {
         const base = this.snap(s.baseId);
-        const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq) : s.input ? computeSnapshot(base, s.input, s.cfg) : null;
+        const v = s.engineVersion as EngineVersion;
+        const again = s.kind === 'finale' ? computeFinale(base, s.cfg, s.seq, v) : s.input ? computeSnapshot(base, s.input, s.cfg, v) : null;
         if (!again) errors.push(`I2: ${s.id}에 계산 입력이 없음`);
         else if (contentHashOf(again) !== s.contentHash) errors.push(`I2: ${s.id}를 다시 계산하면 결과가 다름`);
       }
@@ -322,12 +331,12 @@ export class TankSession {
    * 무결성 검사 범위(엔진 버전이 섞인 기록용). 어떤 스냅샷을 무엇으로 확인했는지 센다.
    * - contentChecked: 내용 해시(I3) — 모든 스냅샷
    * - inputChainChecked: 입력 해시 체인(I6)·구조(I5) — 모든 스냅샷
-   * - recomputed: 다시 계산(I2) — 지금 엔진 버전으로 만든 스냅샷만
+   * - recomputed: 다시 계산(I2) — 계산 코드를 보관 중인 엔진 버전(SUPPORTED_ENGINES)으로 만든 스냅샷
    * - notRecomputed: 다른 엔진 버전 스냅샷(그때 규칙으로 맞게 계산됐는지는 확인할 수 없음)
    */
   integrityScope(): { versions: string[]; contentChecked: number; inputChainChecked: number; recomputed: number; notRecomputed: number } {
     const derived = this.d.snapshots.filter((s) => s.baseId);
-    const recomputed = derived.filter((s) => s.engineVersion === ENGINE_VERSION).length;
+    const recomputed = derived.filter((s) => isSupported(s.engineVersion)).length;
     return {
       versions: [...new Set(this.d.snapshots.map((s) => s.engineVersion))].sort(),
       contentChecked: this.d.snapshots.length,
@@ -356,8 +365,8 @@ export class TankSession {
   }
 
   /** 같은 기록을 새 세션에 넣었을 때의 어항 상태. 시드·배치 비교 테스트용. */
-  static replayState(cfg: TankConfig, inputs: NewEntry[]): TankState {
-    const s = new TankSession(cfg);
+  static replayState(cfg: TankConfig, inputs: NewEntry[], engineVersion: EngineVersion = ENGINE_VERSION): TankState {
+    const s = new TankSession(cfg, 0, engineVersion);
     let t = 0;
     for (const i of inputs) s.addEntry(i, (t += 1000));
     return s.head.state;
@@ -368,8 +377,8 @@ export class TankSession {
    * 어항 설정(시드 포함)도 해시에 들어가므로 "같은 설정·같은 기록 → 같은 결과" 확인에만 쓴다.
    * 시드별 배치 차이를 비교할 때는 replayState()로 상태만 비교한다.
    */
-  static replay(cfg: TankConfig, inputs: NewEntry[]): string {
-    const s = new TankSession(cfg);
+  static replay(cfg: TankConfig, inputs: NewEntry[], engineVersion: EngineVersion = ENGINE_VERSION): string {
+    const s = new TankSession(cfg, 0, engineVersion);
     let t = 0;
     for (const i of inputs) s.addEntry(i, (t += 1000));
     return s.head.inputHash + ':' + hashOf(s.head.state);
@@ -378,6 +387,10 @@ export class TankSession {
   toJSON(): SessionData {
     return JSON.parse(JSON.stringify(this.d)) as SessionData;
   }
+}
+
+function isSupported(v: string): boolean {
+  return (SUPPORTED_ENGINES as readonly string[]).includes(v);
 }
 
 function toInput(e: Entry): EngineInput {
