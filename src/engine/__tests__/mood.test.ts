@@ -9,7 +9,9 @@ describe('analyzeMood', () => {
   it('칩만 있으면 칩 벡터를 그대로 쓴다', () => {
     const m = analyzeMood(['따뜻함'], '');
     expect(m.temp).toBeCloseTo(0.8);
-    expect(m.labels).toEqual(['따뜻함']);
+    // 0.3.0: 옛 이름은 감정 사전 표시명으로 읽는다. 0.2.0 어항은 옛 이름 그대로
+    expect(m.labels).toEqual(['기쁨']);
+    expect(analyzeMood(['따뜻함'], '', '0.2.0').labels).toEqual(['따뜻함']);
   });
 
   it('칩 0.7 + 한마디 0.3으로 합친다', () => {

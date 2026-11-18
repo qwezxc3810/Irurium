@@ -59,7 +59,7 @@ describe('기억 보기: 요소가 어떤 기록에서 생기고 자랐는지(�
   it('없는 요소면 null, 엔진·골든은 그대로', () => {
     const s = play(2);
     expect(memoryOf(s.snapshots, s.entries, s.head.id, 'nope')).toBeNull();
-    expect(ENGINE_VERSION).toBe('0.2.0');
+    expect(ENGINE_VERSION).toBe('0.3.0');
     expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe(GOLDEN_REPLAY[ENGINE_VERSION]);
   });
 
@@ -99,5 +99,36 @@ describe('기억 보기: 요소가 어떤 기록에서 생기고 자랐는지(�
     expect(last.date).toBe('2026-11-28');
     expect(last.text).toBe(promo.text);
     expect(last.chips).toEqual([]);
+  });
+});
+
+import { toggleChip } from '../chips';
+describe('대표 감정 칩 고르기', () => {
+  it('처음 누른 칩이 대표, 고른 칩을 다시 누르면 대표로, 대표를 다시 누르면 빠짐', () => {
+    let cs: string[] = [];
+    cs = toggleChip(cs, '그리움');
+    cs = toggleChip(cs, '기쁨');
+    expect(cs).toEqual(['그리움', '기쁨']);
+    cs = toggleChip(cs, '기쁨');
+    expect(cs).toEqual(['기쁨', '그리움']);
+    cs = toggleChip(cs, '기쁨');
+    expect(cs).toEqual(['그리움']);
+  });
+});
+
+describe('기억 보기: 감정 흔적(0.3.0)', () => {
+  it('흔적을 누르면 그 흔적을 만든 날의 감정·한마디, 완독 채움은 "그동안의 ○○이 모여"', () => {
+    const s = new TankSession(littlePrinceConfig());
+    let t = Date.UTC(2026, 10, 13, 12);
+    for (const e of littlePrinceEntries()) s.addEntry(e, (t += 86_400_000));
+    s.finalize('completed', (t += 3_600_000));
+    const tr = s.head.state.objects.filter((o) => o.kind === 'emotion');
+    expect(tr.length).toBeGreaterThanOrEqual(9); // 140쪽 → 목표 9개 이상(자란 단계 포함 made 기준)
+    for (const o of tr) {
+      const m = memoryOf(s.snapshots, s.entries, s.head.id, o.id)!;
+      expect(m.born).not.toBeNull();
+      if (m.born!.kind === 'finale') expect(m.born!.text).toMatch(/^그동안의 /);
+      else expect(m.born!.text).toMatch(/에서 .+ 생겼어요$/);
+    }
   });
 });

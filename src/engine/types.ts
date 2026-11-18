@@ -47,7 +47,8 @@ export interface EngineInput {
   note: string;
 }
 
-export type ObjectKind = 'fish' | 'plant' | 'rock' | 'symbol';
+/** emotion: 0.3.0 감정 흔적(감정 사전 상징) */
+export type ObjectKind = 'fish' | 'plant' | 'rock' | 'symbol' | 'emotion';
 export type Layer = 'back' | 'floor' | 'mid' | 'front';
 
 /** 어항 안에 놓인 오브젝트 하나. el은 카탈로그 id이고, 그림 파일은 렌더러가 매니페스트로 찾는다. */
@@ -63,6 +64,8 @@ export interface PlacedObject {
   /** -1(차갑게) ~ +1(따뜻하게). 렌더러가 색 보정에 쓴다. */
   tint: number;
   bornSeq: number;
+  /** 0.3.0 감정 흔적만: 자람 단계(1~TRACE.maxStage) */
+  stage?: number;
 }
 
 export interface TankState {
@@ -100,6 +103,25 @@ export interface Ledger {
   maxProgress: number;
   lastGrowthKind: ObjectKind | null;
   nextObjectNo: number;
+  /** 0.3.0 감정 흔적 원장(0.2.0 어항엔 없음) */
+  trace?: TraceLedger;
+}
+
+export interface TraceLedger {
+  /**
+   * 감정별로 따로 모으는 쪽수(15쪽이 차기 전 나머지). 감정 id → 기여한 기록들(먼저 온 것부터).
+   * 서로 다른 감정의 쪽수는 섞지 않는다. 감정을 알 수 없는 기록의 쪽수는 모으지 않는다(완독 목표에만 반영).
+   */
+  buckets: Record<string, Array<{ seq: number; date: ISODate; pages: number }>>;
+  /** 하루 상한으로 미뤄 둔 흔적. 원래 기록의 감정·순번·날짜를 함께 보관해 나중에 놓여도 출처가 바뀌지 않는다(먼저 미룬 것부터) */
+  queue: Array<{ emotion: string; seq: number; date: ISODate; from?: ISODate }>;
+  day: { date: ISODate | null; count: number };
+  /** 기록한 대표 감정 횟수(감정 id → 횟수). 완독 채움 비율에 쓴다 */
+  emotionCounts: Record<string, number>;
+  /** 실제로 놓이거나 자란 흔적 수 */
+  made: number;
+  /** 흔적별 마지막으로 자란 날(쿨다운) */
+  grownOn: Record<string, ISODate>;
 }
 
 export type ChangeLevel = 'daily' | 'growth' | 'special' | 'finale' | 'info';
@@ -108,6 +130,8 @@ export interface Change {
   level: ChangeLevel;
   text: string;
   objectId?: string;
+  /** 0.3.0 감정 흔적만: 미뤄 둔 흔적이 나중 기록에서 놓였을 때, 그 흔적을 만든 원래 기록의 순번(기억 보기가 원래 기록을 보여 줌) */
+  sourceSeq?: number;
 }
 
 export interface EngineOutput {

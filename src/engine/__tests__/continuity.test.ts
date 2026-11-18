@@ -46,8 +46,8 @@ const chainIds = (s: TankSession) => {
 };
 
 describe('고정 파일: 실제 엔진 0.1.0 기록', () => {
-  it('모두 0.1.0으로 만들었고, 지금 엔진(0.2.0)으로 불러와도 무결성 오류가 없다(다시 계산하지 않음)', () => {
-    expect(ENGINE_VERSION).toBe('0.2.0');
+  it('모두 0.1.0으로 만들었고, 지금 엔진(0.3.0)으로 불러와도 무결성 오류가 없다(다시 계산하지 않음)', () => {
+    expect(ENGINE_VERSION).toBe('0.3.0');
     for (const fx of [confirmedFx, draftFx]) {
       const d = raw(fx);
       expect(new Set(d.snapshots.map((x) => x.engineVersion))).toEqual(new Set(['0.1.0']));
@@ -140,7 +140,8 @@ describe('2. 기존 확정 스냅샷은 바뀌지 않는다', () => {
   });
 });
 
-describe('3. 새 기록부터 지금 엔진 규칙으로 계산한다', () => {
+// 0.3.0부터: 어항은 만들 때 엔진으로 끝까지 계산한다. 계산 코드를 보관하지 않는 0.1.0 어항은 0.2.0 도입 때처럼 0.2.0(FALLBACK_ENGINE)으로 이어서 계산한다
+describe('3. 새 기록부터 0.2.0 규칙으로 계산한다(0.1.0 어항 → FALLBACK_ENGINE)', () => {
   const s = load(confirmedFx);
   addAll(s, ENTRIES);
   s.confirmIfDue(T_END + 60 * DAY);
@@ -149,7 +150,7 @@ describe('3. 새 기록부터 지금 엔진 규칙으로 계산한다', () => {
   it('새 스냅샷은 모두 0.2.0이고, 저장된 입력으로 지금 엔진에서 다시 계산하면 같다', () => {
     expect(news.length).toBe(30);
     for (const x of news) {
-      expect(contentHashOf(computeSnapshot(s.snap(x.baseId!), x.input!, x.cfg)), x.id).toBe(x.contentHash);
+      expect(contentHashOf(computeSnapshot(s.snap(x.baseId!), x.input!, x.cfg, '0.2.0')), x.id).toBe(x.contentHash);
       expect(x.inputHash).toBe(hashOf({ base: s.snap(x.baseId!).inputHash, input: x.input, v: '0.2.0' }));
     }
   });

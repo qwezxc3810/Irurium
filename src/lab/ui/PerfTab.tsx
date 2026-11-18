@@ -18,7 +18,7 @@ export function PerfTab({ suite }: { suite: SuiteResult }) {
   const scene = PERF_SCENES.find((s) => s.id === sceneId)!;
   const state = useMemo(() => frameAt(suite.runs[scene.run]!.find((r) => r.key === scene.key)!, scene.day).state, [suite, scene]);
   const counts = useMemo(() => {
-    const c = { fish: 0, plant: 0, rock: 0, symbol: 0 };
+    const c = { fish: 0, plant: 0, rock: 0, symbol: 0, emotion: 0 };
     for (const o of state.objects) c[o.kind]++;
     return c;
   }, [state]);

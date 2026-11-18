@@ -8,7 +8,12 @@ import { moodSpreadOf } from './render/atmosphere';
 import { loadPref, PREF_LABEL, safeStorage, type QualityPref } from './perf/autoQuality';
 import type { PerfResult } from './perf/report';
 import { useDialog, type AskOptions, type AskResult } from './ui/Dialog';
-import { BASE_CHIPS, analyzeMood } from './engine/mood';
+import { BASE_CHIPS, BASE_CHIPS_V2, analyzeMood, representativeEmotion } from './engine/mood';
+import type { EngineVersion } from './engine/config';
+import { toggleChip } from './ui/chips';
+
+/** 어항 엔진 버전에 맞는 마음 칩(0.2.0 어항은 옛 8개, 새 어항은 감정 사전 12개) */
+const chipsFor = (v: EngineVersion): readonly string[] => (v === '0.2.0' ? BASE_CHIPS_V2 : BASE_CHIPS);
 import { TankSession, type NewEntry } from './engine/session';
 import { littlePrinceConfig, littlePrinceEntries } from './engine/scenarios';
 import { localDateIn } from './engine/dates';
@@ -89,7 +94,8 @@ export function App() {
   const [entryDate, setEntryDate] = useState('');
   const todaysCount = s.entries.filter((e) => !e.deletedAt && e.localDate === (entryDate || today)).length;
 
-  const preview = analyzeMood(chips, note);
+  const preview = analyzeMood(chips, note, s.engineVersion);
+  const rep = s.engineVersion === '0.2.0' ? null : representativeEmotion(chips, preview);
 
   const save = useCallback((input: NewEntry, at: number) => {
     const ss = session.current;
@@ -173,7 +179,7 @@ export function App() {
     if (deepErrors.length) return setReplayResult(`불변 규칙 위반: ${deepErrors.join(' / ')}`);
     const edited = s.revisions.length > 0 || s.entries.some((e) => e.deletedAt || e.rev > 1);
     if (edited) return setReplayResult('모든 스냅샷을 저장된 입력으로 다시 계산해 봤고 결과가 같아요. 수정·삭제한 기록이 있어 처음부터 다시 넣는 비교는 하지 않았어요.');
-    const replayed = TankSession.replay(s.cfg, inputLog.current);
+    const replayed = TankSession.replay(s.cfg, inputLog.current, s.engineVersion);
     const current = s.snapshots.filter((x) => x.kind === 'entry').at(-1);
     const currentHash = current ? current.inputHash + ':' + hashOf(current.state) : '';
     setReplayResult(replayed === currentHash || inputLog.current.length === 0 ? '모든 스냅샷을 다시 계산해 봤고, 같은 기록을 처음부터 다시 넣어도 같은 어항이 나왔어요.' : '결과가 달라요. 엔진 재현성 오류예요.');
@@ -231,7 +237,7 @@ export function App() {
                 <div className="fix">
                   <span>마음이 달랐나요? (확정 전이라 어항이 다시 계산돼요)</span>
                   <div className="chips">
-                    {BASE_CHIPS.map((c) => (
+                    {chipsFor(s.engineVersion).map((c) => (
                       <button key={c} className={draftEntry.moodChips.includes(c) ? 'chip on' : 'chip'}
                         onClick={() => {
                           const r = s.editEntry(draftEntry.id, { moodChips: [c] }, draftEntry.rev, now);
@@ -272,10 +278,15 @@ export function App() {
             </label>
             <div className="field">오늘의 마음 (선택)
               <div className="chips">
-                {BASE_CHIPS.map((c) => (
-                  <button key={c} className={chips.includes(c) ? 'chip on' : 'chip'} onClick={() => setChips((cs) => (cs.includes(c) ? cs.filter((x) => x !== c) : [...cs, c]))}>{c}</button>
+                {chipsFor(s.engineVersion).map((c) => (
+                  <button key={c} className={chips.includes(c) ? 'chip on' : 'chip'} aria-pressed={chips.includes(c)} onClick={() => setChips((cs) => toggleChip(cs, c))}>
+                    {c}{chips[0] === c && s.engineVersion !== '0.2.0' && <span className="rep-badge">대표</span>}
+                  </button>
                 ))}
               </div>
+              {s.engineVersion !== '0.2.0' && (
+                <p className="hint">처음 누른 마음이 <b>대표</b>가 되어 어항에 흔적을 남겨요(15쪽마다 하나, 하루 최대 3개). 고른 마음을 한 번 더 누르면 대표가 바뀌고, 대표를 다시 누르면 빠져요.{rep && !chips.length ? ` 한마디에서 읽은 마음: ${rep.name}` : ''}</p>
+              )}
             </div>
             <label className="field">한마디 (선택)
               <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="한 단어도, 이모지도 좋아요" />
@@ -387,7 +398,7 @@ function Timeline({ entries, session, now, ask, onChange, onShow }: {
                   const a = await ask({
                     title: `#${e.seq} 기록의 마음 고치기`,
                     message: snapNow?.status === 'draft' ? '확정 전 기록이라 고친 마음으로 어항이 다시 그려져요.' : '이미 수족관에 담긴 기록이라 어항은 그대로이고 기록만 바뀌어요.',
-                    choices: BASE_CHIPS, confirmLabel: '고치기',
+                    choices: chipsFor(session.engineVersion), confirmLabel: '고치기',
                   });
                   if (!a.ok || !a.value) return;
                   const c = a.value;

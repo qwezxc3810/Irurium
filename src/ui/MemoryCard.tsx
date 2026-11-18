@@ -1,6 +1,6 @@
 import type { MemoryMoment, ObjectMemory } from './memory';
 
-const KIND_ICON: Record<string, string> = { fish: '🐟', plant: '🌿', rock: '🪨', symbol: '✨' };
+const KIND_ICON: Record<string, string> = { fish: '🐟', plant: '🌿', rock: '🪨', symbol: '✨', emotion: '💠' };
 
 function dateLabel(iso: string) {
   const [, m, d] = iso.split('-');
@@ -11,7 +11,7 @@ function Moment({ m, title }: { m: MemoryMoment; title: string }) {
   if (m.entryState === 'hidden') {
     return (
       <div className="memory-moment">
-        <b>{title}</b> {dateLabel(m.date)} <span className="hint">· 지운 기록이라 내용은 보이지 않아요</span>
+        <b>{title}</b> {dateLabel(m.date)} <span className="hint">· 지운 기록이라 내용은 보이지 않아요{m.appearedOn ? ` · 어항에 나타난 날 ${dateLabel(m.appearedOn)}` : ''}</span>
       </div>
     );
   }
@@ -24,6 +24,7 @@ function Moment({ m, title }: { m: MemoryMoment; title: string }) {
       </div>
       {m.note && <p className="memory-note">“{m.note}”</p>}
       {m.text && <p className="memory-why">{m.text}</p>}
+      {m.appearedOn && <p className="hint">감정이 기록된 날은 {dateLabel(m.date)}, 어항에 나타난 날은 {dateLabel(m.appearedOn)}이에요(하루 3개 상한으로 미뤄졌어요).</p>}
       {m.entryState === 'edited' && <p className="hint">나중에 기록을 고쳤어요. 여기엔 이 요소가 생길 때의 마음이 보여요.</p>}
     </div>
   );
@@ -45,7 +46,7 @@ export function MemoryCard({ memory, kind, onClose }: { memory: ObjectMemory; ki
       {memory.grew.length > 0 && (
         <details open={memory.grew.length <= 3}>
           <summary>함께 자란 날 {memory.grew.length}번</summary>
-          {memory.grew.map((m, i) => <Moment key={i} m={m} title={m.kind === 'finale' ? '대표 생물이 된 날' : '자란 날'} />)}
+          {memory.grew.map((m, i) => <Moment key={i} m={m} title={m.kind === 'finale' ? (kind === 'emotion' ? '완성하며 자란 날' : '대표 생물이 된 날') : '자란 날'} />)}
         </details>
       )}
     </section>
