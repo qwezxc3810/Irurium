@@ -102,18 +102,20 @@ Semi-realistic 2D illustration for a premium mobile aquarium game, single object
 - 검증실에 12종 한눈에 보기 + "이 상징은 어떤 감정일까?" 평가 추가
 - 마음에 안 드는 그림은 그 1장만 다시 요청해요
 
-## 체크리스트
+## 체크리스트 (2026-11-18 12종 모두 받음, PR #26으로 적용)
+시트에서 잘라 낸 6종(외로움·슬픔·답답함·막막함·괴로움·졸림)은 원본이 362px이에요. 출시 전 개별 고해상도로 다시 요청해요.
+
 | # | 감정 | 파일 | 받음 |
 |---|---|---|---|
-| 1 | 기쁨 | sunset-coral.png | ☐ |
-| 2 | 설렘 | pearl-clam.png | ☐ |
-| 3 | 신남 | fish-school.png | ☐ |
-| 4 | 뿌듯함 | stone-tower.png | ☐ |
-| 5 | 평온 | star-jelly.png | ☐ |
-| 6 | 그리움 | bottle-letter.png | ☐ |
-| 7 | 외로움 | lantern-fish.png | ☐ |
-| 8 | 슬픔 | tear-pearl.png | ☐ |
-| 9 | 답답함 | tangled-weed.png | ☐ |
-| 10 | 막막함 | foggy-compass.png | ☐ |
-| 11 | 괴로움 | black-urchin.png | ☐ |
-| 12 | 졸림 | sleeping-conch.png | ☐ |
+| 1 | 기쁨 | sunset-coral.png | ✅ |
+| 2 | 설렘 | pearl-clam.png | ✅ |
+| 3 | 신남 | fish-school.png | ✅ |
+| 4 | 뿌듯함 | stone-tower.png | ✅ |
+| 5 | 평온 | star-jelly.png | ✅ |
+| 6 | 그리움 | bottle-letter.png | ✅ |
+| 7 | 외로움 | lantern-fish.png | ✅ |
+| 8 | 슬픔 | tear-pearl.png | ✅ |
+| 9 | 답답함 | tangled-weed.png | ✅ |
+| 10 | 막막함 | foggy-compass.png | ✅ |
+| 11 | 괴로움 | black-urchin.png | ✅ |
+| 12 | 졸림 | sleeping-conch.png | ✅ |
