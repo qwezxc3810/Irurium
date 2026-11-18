@@ -102,6 +102,8 @@ export class AquariumRenderer {
   private bgGraded: Texture | null = null;
   private bgGrade = new ColorMatrixFilter();
   private bgGradeKey = '';
+  /** 기억 보기: 요소를 누르면 그 요소 id를 알려 준다. 없으면 누르기 판정을 아예 켜지 않는다 */
+  private tapHandler: ((objectId: string) => void) | null = null;
   /** 변화 큼일 때 따뜻한/차가운 보조 빛이 번갈아 오가는 움직임(실시간 화면만, 정지 그림·움직임 줄이기에선 멈춤) */
   private glowBase = { warm: 0, cool: 0, swing: 0 };
   private motes: Array<{ s: Sprite; warm: boolean; vx: number; vy: number; phase: number; base: number }> = [];
@@ -507,6 +509,9 @@ export class AquariumRenderer {
         if (existing) existing.update(obj, lanes.get(obj.id));
         else {
           const f = new FishView(obj, texture, spec, lanes.get(obj.id));
+          // 물고기는 몸이 가늘어 누르기 어려우니 그림 상자 전체를 누를 수 있게
+          f.root.hitArea = new Rectangle(-texture.width / 2, -texture.height / 2, texture.width, texture.height);
+          this.makeTappable(f.root, obj.id);
           this.fish.set(obj.id, f);
           this.layers.mid.addChild(f.root);
         }
@@ -525,6 +530,7 @@ export class AquariumRenderer {
       sprite.position.set(obj.x, obj.y);
       sprite.tint = tintFor(obj.tint);
       sprite.alpha = 0;
+      this.makeTappable(sprite, obj.id);
       const layer = obj.layer === 'front' ? this.layers.front : obj.layer === 'back' ? this.layers.back : this.layers.floor;
       layer.addChild(sprite);
       // 같은 층 안에서는 아래쪽(y가 큰) 것이 앞에 오게
@@ -536,6 +542,24 @@ export class AquariumRenderer {
         swayPhase: mulberry32(seedFromString(obj.id))() * Math.PI * 2,
       });
     }
+  }
+
+  /** 기억 보기: 요소를 눌렀을 때 알려 줄 함수. null이면 끈다(검증실·정지 그림은 끈 채로 둔다) */
+  setObjectTapHandler(fn: ((objectId: string) => void) | null) {
+    this.tapHandler = fn;
+    for (const [id, f] of this.fish) this.makeTappable(f.root, id);
+    for (const [id, v] of this.statics) this.makeTappable(v.sprite, id);
+  }
+
+  private makeTappable(d: Container, objectId: string) {
+    d.removeAllListeners('pointertap');
+    if (!this.tapHandler) {
+      d.eventMode = 'none';
+      return;
+    }
+    d.eventMode = 'static';
+    d.cursor = 'pointer';
+    d.on('pointertap', () => this.tapHandler?.(objectId));
   }
 
   private drawLight(state: TankState) {

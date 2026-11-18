@@ -27,10 +27,12 @@ interface Props {
   quality?: RenderQuality;
   /** 렌더링 버전(기존 v0 / 분위기 atmos-1). 없으면 기본(분위기) */
   renderStyle?: RenderStyle;
+  /** 기억 보기: 어항 속 요소를 누르면 그 요소 id로 불린다. 없으면 누르기 판정을 켜지 않는다 */
+  onObjectTap?: (objectId: string) => void;
 }
 
 /** PixiJS 렌더러를 React에 붙이는 얇은 껍데기. 상태는 props로만 받는다. */
-export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, legacyLighting, label = '내 어항', quality = 'normal', renderStyle }, ref) {
+export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function AquariumCanvas({ state, options, assetOverrides, legacyLighting, label = '내 어항', quality = 'normal', renderStyle, onObjectTap }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const renderer = useRef<AquariumRenderer | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
@@ -64,6 +66,15 @@ export const AquariumCanvas = forwardRef<AquariumCanvasHandle, Props>(function A
   useEffect(() => {
     if (renderStyle) renderer.current?.setRenderStyle(renderStyle);
   }, [renderStyle]);
+
+  // 최신 콜백을 ref로 들고, 렌더러에는 켜고 끄기만 알린다(매 렌더마다 다시 걸지 않게)
+  const tapRef = useRef(onObjectTap);
+  tapRef.current = onObjectTap;
+  const tapOn = !!onObjectTap;
+  useEffect(() => {
+    if (loading) return;
+    renderer.current?.setObjectTapHandler(tapOn ? (id) => tapRef.current?.(id) : null);
+  }, [tapOn, loading]);
 
   useImperativeHandle(ref, () => ({
     playCleaning: () => renderer.current?.playCleaning(),
