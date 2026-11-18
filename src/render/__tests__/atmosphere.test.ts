@@ -236,7 +236,17 @@ describe('감정 상징 12종 그림(기본 그림)', () => {
   });
   it('렌더러: 그림이 있으면 그림, 없으면 임시 도형. 신남은 단계마다 무리가 커지고, 평온은 떠다님', () => {
     expect(rendererSource).toMatch(/obj\.kind === 'emotion' && this\.syncEmotionArt\(obj\)/);
-    expect(rendererSource).toMatch(/2 \+ \(obj\.stage \?\? 1\)/);
+    expect(rendererSource).toMatch(/const want = schoolSize\(obj\.stage\)/);
     expect(rendererSource).toMatch(/v\.float\.baseY \+ \(rm \? 0/);
+  });
+});
+
+describe('리뷰 반영(PR #26): 무리 렌더링 연결', () => {
+  it('따르는 물고기는 자기 경로 없이 follow()로 이끄는 물고기 자리·방향을 따르고, 무리 물고기도 앞수초 투명 처리에 들어간다', () => {
+    expect(rendererSource).toMatch(/list\[k\]!\.follow\(/);
+    expect(rendererSource).toMatch(/memberPosition\(leader\.root\.position, leader\.facing, k\)/);
+    expect(rendererSource).toMatch(/setExtraHalfWidth\(schoolExtraHalfWidth\(want\)\)/);
+    expect(rendererSource).toMatch(/\.\.\.\[\.\.\.this\.swimTraces\.values\(\)\]\.flat\(\)/);
+    expect(rendererSource).toMatch(/this\.addSwimmer\(\{ \.\.\.obj, id: `\$\{obj\.id\}#\$\{k\}`/); // 꼬리 박자만 다르게, 누르면 같은 기억 카드(tapId = obj.id)
   });
 });
