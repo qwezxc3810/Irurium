@@ -2,6 +2,18 @@
 
 exports[`평가 어항: 한 가지만 다르게 > 엔진·그래픽은 그대로(엔진 0.2.0, 골든 해시, 그래픽 목록) 1`] = `
 [
+  "emotion.black-urchin",
+  "emotion.bottle-letter",
+  "emotion.fish-school",
+  "emotion.foggy-compass",
+  "emotion.lantern-fish",
+  "emotion.pearl-clam",
+  "emotion.sleeping-conch",
+  "emotion.star-jelly",
+  "emotion.stone-tower",
+  "emotion.sunset-coral",
+  "emotion.tangled-weed",
+  "emotion.tear-pearl",
   "fish.bluefin",
   "fish.foxfish",
   "fish.goldfish",

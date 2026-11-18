@@ -19,6 +19,8 @@ import type { PlacedObject, TankState } from '../engine/types';
 import { applyOverrides, loadManifest, loadTextures, type AssetOverrides, type LoadedAssets } from '../assets/manifest';
 import { FishView } from './FishView';
 import { TraceView } from './TraceView';
+import { School } from './school';
+import type { ElementAsset } from '../assets/manifest';
 import { Tween, tintFor } from './util';
 import { DISPLAY, displayScale, fishLaneLayout, overlaps, type Box } from './display';
 
@@ -44,7 +46,24 @@ interface StaticView {
   fade: number;
   alphaTween: Tween;
   swayPhase: number;
+  /** 0.3.0 감정 흔적 중 물속에 떠 있는 것(별빛 해파리): 기준 높이와 오르내림 위상 */
+  float?: { baseY: number; phase: number };
 }
+
+/**
+ * 0.3.0 감정 흔적의 화면 배치(렌더러 전용, 엔진 좌표와 별개).
+ * 엔진은 흔적을 바닥 두 줄(먼 줄·앞줄)에 놓지만, 물고기·해파리 상징은 물속에서 움직이게 그린다.
+ */
+const EMOTION_SWIM = {
+  /** 신남: 같은 물고기 그림으로 무리(단계 1→3: 3→5마리). 대열은 render/school.ts */
+  school: { el: 'emotion.fish-school', laneY: 330 },
+  /** 외로움: 혼자, 아래쪽에서 천천히 */
+  lonely: { el: 'emotion.lantern-fish', laneY: 425 },
+  /** 평온: 물속에 떠서 천천히 오르내림 */
+  float: { el: 'emotion.star-jelly', y: 260, range: 60, amp: 10, period: 7 },
+  /** 먼 줄(back)은 작게 그려 깊이를 준다 */
+  farScale: 0.8,
+} as const;
 
 interface Bubble { s: Sprite; vy: number; wobble: number; phase: number }
 
@@ -67,8 +86,11 @@ export class AquariumRenderer {
   };
   private fish = new Map<string, FishView>();
   private statics = new Map<string, StaticView>();
-  /** 0.3.0 감정 흔적(임시 도형) */
+  /** 0.3.0 감정 흔적(그림이 없을 때 임시 도형) */
   private traces = new Map<string, TraceView>();
+  /** 0.3.0 감정 흔적 중 헤엄치는 것(신남 무리·외로움 물고기). 무리는 여러 마리이고 0번이 이끈다 */
+  private swimTraces = new Map<string, FishView[]>();
+  private schools = new Map<string, School>();
   private bubbles: Bubble[] = [];
   private bubbleTimer = 0;
   private lightOverlay = new Graphics();
@@ -401,7 +423,7 @@ export class AquariumRenderer {
     const c = this.app.canvas;
     const kinds = { fish: this.fish.size, plant: 0, rock: 0, symbol: 0, emotion: 0 };
     for (const v of this.statics.values()) if (v.obj.kind !== 'fish') kinds[v.obj.kind]++;
-    kinds.emotion = this.traces.size;
+    kinds.emotion += this.traces.size + this.swimTraces.size + this.schools.size;
     return {
       quality: this.quality,
       dpr: window.devicePixelRatio || 1,
@@ -441,10 +463,16 @@ export class AquariumRenderer {
     this.statics.clear();
     for (const v of this.traces.values()) v.destroy();
     this.traces.clear();
+    for (const list of this.swimTraces.values()) for (const f of list) f.destroy();
+    this.swimTraces.clear();
+    for (const sc of this.schools.values()) sc.destroy();
+    this.schools.clear();
     this.setState(state, { mossStage: opts.mossStage, reducedMotion: true, moodSpread: opts.moodSpread });
     this.layoutStillMotes();
     for (const f of this.fish.values()) f.settle(state);
-    const fishBoxes = [...this.fish.values()].map((f) => f.bounds());
+    for (const list of this.swimTraces.values()) for (const f of list) f.settle(state);
+    for (const sc of this.schools.values()) sc.settle(state);
+    const fishBoxes = [...this.fish.values(), ...[...this.swimTraces.values()].flat(), ...[...this.schools.values()].flatMap((sc) => sc.members)].map((f) => f.bounds());
     for (const v of this.statics.values()) {
       v.scaleTween.finish();
       v.alphaTween.finish();
@@ -505,9 +533,12 @@ export class AquariumRenderer {
     for (const [id, f] of this.fish) if (!ids.has(id)) { f.destroy(); this.fish.delete(id); }
     for (const [id, v] of this.statics) if (!ids.has(id)) { v.sprite.destroy(); this.statics.delete(id); }
     for (const [id, v] of this.traces) if (!ids.has(id)) { v.destroy(); this.traces.delete(id); }
+    for (const [id, list] of this.swimTraces) if (!ids.has(id)) { for (const f of list) f.destroy(); this.swimTraces.delete(id); }
+    for (const [id, sc] of this.schools) if (!ids.has(id)) { sc.destroy(); this.schools.delete(id); }
 
     const lanes = fishLaneLayout(objects, this.assets.manifest.elements);
     for (const obj of objects) {
+      if (obj.kind === 'emotion' && this.syncEmotionArt(obj)) continue;
       if (obj.kind === 'emotion') {
         const ex = this.traces.get(obj.id);
         if (ex) { ex.update(obj); continue; }
@@ -562,12 +593,90 @@ export class AquariumRenderer {
     }
   }
 
+  /**
+   * 0.3.0 감정 흔적을 그림으로 그린다. 그림이 없으면 false(임시 도형 TraceView로).
+   * - 신남: 같은 id의 물고기 여러 마리(같은 움직임으로 무리), 단계마다 한 마리씩 늘어남
+   * - 외로움: 물고기 한 마리, 아래쪽 레인
+   * - 평온: 물속에 떠서 오르내림
+   * - 나머지: 바닥 장식. 먼 줄은 작게. 자란 단계는 크기(엔진 scale 1 → 1.3)로
+   * 감정 흔적은 물빛 보정(tint)을 하지 않는다(감정 색을 그대로 보이게).
+   */
+  private syncEmotionArt(obj: PlacedObject): boolean {
+    const spec = this.assets.manifest.elements[obj.el];
+    const texture = this.tex(obj.el);
+    if (!spec || !texture) return false;
+    const far = obj.layer === 'back' ? EMOTION_SWIM.farScale : 1;
+    if (obj.el === EMOTION_SWIM.lonely.el) {
+      const list = this.swimTraces.get(obj.id);
+      if (list) list[0]!.update({ ...obj, kind: 'fish', tint: 0 }, EMOTION_SWIM.lonely.laneY);
+      else this.swimTraces.set(obj.id, [this.addSwimmer(obj, texture, spec, EMOTION_SWIM.lonely.laneY, obj.id)]);
+      return true;
+    }
+    if (obj.el === EMOTION_SWIM.school.el) {
+      // 무리: 0번이 이끌고 나머지는 따른다. 성장·대열 폭 처리는 render/school.ts의 School
+      let school = this.schools.get(obj.id);
+      if (!school) {
+        school = new School((o, laneY, extra) => this.addSwimmer(o, texture, spec, laneY, obj.id, extra), EMOTION_SWIM.school.laneY);
+        this.schools.set(obj.id, school);
+      }
+      school.sync(obj, this.opts.reducedMotion);
+      return true;
+    }
+    const base = ((spec.displayHeight ? spec.displayHeight / texture.height : (spec.displayWidth ?? 100) / texture.width)) * far;
+    const v = this.statics.get(obj.id);
+    if (v) {
+      if (v.obj.scale !== obj.scale) v.scaleTween = new Tween(v.scaleTween.value, base * obj.scale, 1.0);
+      v.obj = obj;
+      return true;
+    }
+    const sprite = new Sprite(texture);
+    const floating = obj.el === EMOTION_SWIM.float.el;
+    sprite.alpha = 0;
+    this.makeTappable(sprite, obj.id);
+    let layer: Container;
+    let float: StaticView['float'];
+    if (floating) {
+      // 물속에 떠 있음: 가운데 기준, 높이는 흔적마다 조금씩 다르게
+      sprite.anchor.set(0.5, 0.5);
+      const r = mulberry32(seedFromString(obj.id + ':float'));
+      const baseY = EMOTION_SWIM.float.y + (r() * 2 - 1) * EMOTION_SWIM.float.range;
+      sprite.position.set(obj.x, baseY);
+      float = { baseY, phase: r() * Math.PI * 2 };
+      layer = this.layers.mid;
+    } else {
+      sprite.anchor.set(0.5, 1);
+      sprite.position.set(obj.x, obj.y);
+      layer = obj.layer === 'back' ? this.layers.back : this.layers.floor;
+    }
+    layer.addChild(sprite);
+    if (!floating) layer.children.sort((a, b) => a.y - b.y);
+    this.statics.set(obj.id, {
+      obj, sprite, baseScale: base, fade: 1,
+      scaleTween: new Tween(base * obj.scale * 0.6, base * obj.scale, 1.2),
+      alphaTween: new Tween(0, 1, 1.2),
+      swayPhase: mulberry32(seedFromString(obj.id))() * Math.PI * 2,
+      ...(float ? { float } : {}),
+    });
+    return true;
+  }
+
+  /** 헤엄치는 감정 흔적 하나(물고기 그림). 누르면 tapId(논리 오브젝트)의 기억 카드 */
+  private addSwimmer(obj: PlacedObject, texture: Texture, spec: ElementAsset, laneY: number, tapId: string, extraHalfWidth = 0): FishView {
+    const f = new FishView({ ...obj, kind: 'fish', tint: 0 }, texture, spec, laneY, { extraHalfWidth });
+    f.root.hitArea = new Rectangle(-texture.width / 2, -texture.height / 2, texture.width, texture.height);
+    this.makeTappable(f.root, tapId);
+    this.layers.mid.addChild(f.root);
+    return f;
+  }
+
   /** 기억 보기: 요소를 눌렀을 때 알려 줄 함수. null이면 끈다(검증실·정지 그림은 끈 채로 둔다) */
   setObjectTapHandler(fn: ((objectId: string) => void) | null) {
     this.tapHandler = fn;
     for (const [id, f] of this.fish) this.makeTappable(f.root, id);
     for (const [id, v] of this.statics) this.makeTappable(v.sprite, id);
     for (const [id, v] of this.traces) this.makeTappable(v.root, id);
+    for (const [id, list] of this.swimTraces) for (const f of list) this.makeTappable(f.root, id);
+    for (const [id, sc] of this.schools) for (const f of sc.members) this.makeTappable(f.root, id);
   }
 
   private makeTappable(d: Container, objectId: string) {
@@ -661,7 +770,9 @@ export class AquariumRenderer {
     this.time += dt;
     const rm = this.opts.reducedMotion;
     for (const f of this.fish.values()) f.tick(dt, this.state, rm);
-    const fishBoxes = [...this.fish.values()].map((f) => f.bounds());
+    for (const list of this.swimTraces.values()) for (const f of list) f.tick(dt, this.state, rm);
+    for (const sc of this.schools.values()) sc.tick(dt, this.state, rm);
+    const fishBoxes = [...this.fish.values(), ...[...this.swimTraces.values()].flat(), ...[...this.schools.values()].flatMap((sc) => sc.members)].map((f) => f.bounds());
     for (const v of this.statics.values()) {
       v.scaleTween.step(dt);
       v.alphaTween.step(dt);
@@ -671,6 +782,7 @@ export class AquariumRenderer {
       v.sprite.scale.set(v.scaleTween.value);
       const sway = this.assets.manifest.elements[v.obj.el]?.sway;
       v.sprite.skew.x = sway && !rm ? sway.amplitude * Math.sin(this.time * sway.frequency * Math.PI * 2 + v.swayPhase) : 0;
+      if (v.float) v.sprite.y = v.float.baseY + (rm ? 0 : EMOTION_SWIM.float.amp * Math.sin((this.time / EMOTION_SWIM.float.period) * Math.PI * 2 + v.float.phase));
     }
     const calm = rm || !QUALITY[this.quality].shimmer;
     for (const fx of this.fxViews.values()) fx.tick(this.time, calm);

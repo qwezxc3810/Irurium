@@ -214,3 +214,38 @@ describe('감정 배경 색감(atmos-2, 렌더링 전용)', () => {
     expect(rendererSource).toMatch(/const w = reducedMotion \? 0 :/);
   });
 });
+
+import { EMOTION_SYMBOLS } from '../../engine/catalog';
+const appFiles = Object.keys(import.meta.glob('../../../public/assets/emotions/*.webp'));
+const originals = Object.keys(import.meta.glob('../../../art/originals/emotions/*.png'));
+import manifestJson from '../../../public/assets/manifest.json';
+describe('감정 상징 12종 그림(기본 그림)', () => {
+  const els = (manifestJson as { elements: Record<string, { src: string; displayWidth?: number; displayHeight?: number; swim?: unknown }> }).elements;
+  it('엔진의 감정 흔적 12종이 모두 매니페스트에 있고 파일이 있다', () => {
+    expect(EMOTION_SYMBOLS).toHaveLength(12);
+    for (const e of EMOTION_SYMBOLS) {
+      const a = els[e.id];
+      expect(a, e.id).toBeDefined();
+      expect(appFiles, a!.src).toContain(`../../../public/assets/${a!.src}`);
+      expect(originals).toContain(`../../../art/originals/emotions/${a!.src.split('/')[1]!.replace('.webp', '.png')}`);
+    }
+  });
+  it('헤엄치는 상징(신남 무리·외로움)은 물고기 규격(폭·헤엄), 나머지는 높이 기준', () => {
+    for (const id of ['emotion.fish-school', 'emotion.lantern-fish']) expect(els[id]!.displayWidth && els[id]!.swim).toBeTruthy();
+    for (const e of EMOTION_SYMBOLS.filter((x) => !['emotion.fish-school', 'emotion.lantern-fish'].includes(x.id))) expect(els[e.id]!.displayHeight).toBeGreaterThan(0);
+  });
+  it('렌더러: 그림이 있으면 그림, 없으면 임시 도형. 신남은 단계마다 무리가 커지고, 평온은 떠다님', () => {
+    expect(rendererSource).toMatch(/obj\.kind === 'emotion' && this\.syncEmotionArt\(obj\)/);
+    expect(rendererSource).toMatch(/school\.sync\(obj/);
+    expect(rendererSource).toMatch(/v\.float\.baseY \+ \(rm \? 0/);
+  });
+});
+
+describe('리뷰 반영(PR #26): 무리 렌더링 연결', () => {
+  it('렌더러는 무리를 School(render/school.ts)로 관리하고, 무리 물고기도 앞수초 투명 처리·누르기에 들어간다', () => {
+    expect(rendererSource).toMatch(/new School\(/);
+    expect(rendererSource).toMatch(/school\.sync\(obj, this\.opts\.reducedMotion\)/);
+    expect(rendererSource).toMatch(/\.\.\.\[\.\.\.this\.schools\.values\(\)\]\.flatMap\(\(sc\) => sc\.members\)/);
+    expect(rendererSource).toMatch(/for \(const \[id, sc\] of this\.schools\) for \(const f of sc\.members\) this\.makeTappable\(f\.root, id\)/);
+  });
+});

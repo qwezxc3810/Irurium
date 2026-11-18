@@ -136,3 +136,26 @@ Photorealistic aquarium fish, [SPECIES], full body in exact side profile, head f
 | symbol.sand-lantern 모래 등불 | symbols/sand-lantern.webp (437×640) | displayHeight 120 | 여백 정리 |
 
 - 검증실 물빛 색감 지표의 기준 물색도 새 배경 가운데 평균색 `#043877`로 바꿨습니다(엔진과 무관한 표시용 지표).
+
+### 감정 상징 12종 기본 그림 (2026-11-18, 엔진 0.3.0 감정 흔적)
+
+요청서: [EMOTION_SYMBOL_REQUEST.md](EMOTION_SYMBOL_REQUEST.md). 원본 투명 PNG는 `art/originals/emotions/`, 앱용은 `public/assets/emotions/`(여백을 2% 남기고 정리, 바닥 장식은 아래 여백 0.5%).
+
+| 요소 | 감정 | 앱용 파일 | 크기 키 | 화면 동작 | 원본 |
+| --- | --- | --- | --- | --- | --- |
+| emotion.sunset-coral 노을빛 꽃산호 | 기쁨 | emotions/sunset-coral.webp (501×640) | displayHeight 88 | 바닥 | 1122×1402 |
+| emotion.pearl-clam 반짝이 진주조개 | 설렘 | emotions/pearl-clam.webp (640×612) | displayHeight 62 | 바닥 | 1122×1402 |
+| emotion.fish-school 작은 물고기 떼 | 신남 | emotions/fish-school.webp (768×351) | displayWidth 58, swim 0.11 / 1.6 | 한 그림으로 무리(단계 1→3: 3→5마리), 같은 움직임 | 1774×887 |
+| emotion.stone-tower 쌓아 올린 돌탑 | 뿌듯함 | emotions/stone-tower.webp (488×640) | displayHeight 86 | 바닥 | 1122×1402 |
+| emotion.star-jelly 별빛 해파리 | 평온 | emotions/star-jelly.webp (366×640) | displayHeight 105 | 물속에 떠서 7초 주기로 오르내림 | 1122×1402 |
+| emotion.bottle-letter 유리병 편지 | 그리움 | emotions/bottle-letter.webp (526×640) | displayHeight 78 | 바닥 | 1122×1402 |
+| emotion.lantern-fish 등불 물고기 | 외로움 | emotions/lantern-fish.webp (357×265) | displayWidth 92, swim 0.08 / 0.6 | 혼자, 아래쪽 레인 | **362×362** |
+| emotion.tear-pearl 푸른 눈물 진주 | 슬픔 | emotions/tear-pearl.webp (352×301) | displayHeight 56 | 바닥 | **362×362** |
+| emotion.tangled-weed 엉킨 해초 | 답답함 | emotions/tangled-weed.webp (326×343) | displayHeight 76, sway 0.05 / 0.55 | 바닥, 흔들림 | **362×362** |
+| emotion.foggy-compass 안개 낀 나침반 | 막막함 | emotions/foggy-compass.webp (337×296) | displayHeight 62 | 바닥 | **362×362** |
+| emotion.black-urchin 검은 성게 | 괴로움 | emotions/black-urchin.webp (360×347) | displayHeight 62 | 바닥 | **362×362** |
+| emotion.sleeping-conch 잠든 소라고둥 | 졸림 | emotions/sleeping-conch.webp (339×256) | displayHeight 54 | 바닥 | **362×362** |
+
+- 먼 줄(엔진 y 478)에 놓인 흔적은 0.8배로 그려 깊이를 줘요. 자란 단계는 엔진 크기(1 → 1.15 → 1.3)로 보여요(변형·단계 그림은 사람 평가 뒤).
+- 감정 흔적에는 물빛 보정(tint)을 하지 않아요(감정 색을 그대로).
+- **굵게 표시한 6종은 한 장에 12종을 그린 시트에서 잘라 낸 362px 원본**이에요. 어항에서는 높이 55~90 정도로 작게 보여 지금은 충분하지만, 출시 전에 개별 고해상도로 다시 만들어요.
