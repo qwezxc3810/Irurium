@@ -32,6 +32,8 @@ export class FishView {
 
   /** 무리를 이끌 때: 대열이 차지하는 좌우 폭의 절반(논리 좌표). 벽 판정·시작 위치에 더해 무리 전체가 벽 안에서 돌게 한다 */
   private extraHalf = 0;
+  /** 위치 제한에 쓰는 대열 폭. 폭이 넓어지면 extraHalf로 부드럽게 따라가 무리가 튀지 않게 한다 */
+  private clampHalf = 0;
 
   /** laneY: 화면용 헤엄 높이(fishLaneLayout). 없으면 엔진 레인 그대로 */
   constructor(public obj: PlacedObject, texture: Texture, private spec: ElementAsset, laneY?: number, opts: { extraHalfWidth?: number } = {}) {
@@ -48,6 +50,7 @@ export class FishView {
     this.baseSpeed = 28 + this.rng() * 22;
     this.laneY = laneY ?? obj.y;
     this.extraHalf = opts.extraHalfWidth ?? 0;
+    this.clampHalf = this.extraHalf;
     this.root.position.set(Math.max(BOUNDS.left + this.extraHalf, Math.min(BOUNDS.right - this.extraHalf, obj.x)), this.laneY);
     const unit = (spec.displayWidth ?? 100) / this.length;
     this.scaleTween = new Tween(unit * displayScale(obj) * 0.6, unit * displayScale(obj), 1.2);
@@ -113,7 +116,8 @@ export class FishView {
     const halfW = (this.length * this.root.scale.x) / 2 + this.extraHalf;
     const hitWall = (this.dir === 1 && x + halfW > BOUNDS.right) || (this.dir === -1 && x - halfW < BOUNDS.left);
     if (this.turning === 0 && (hitWall || this.nextTurnIn <= 0)) this.turning = 0.0001;
-    this.root.x = Math.max(BOUNDS.left + this.extraHalf, Math.min(BOUNDS.right - this.extraHalf, x));
+    this.clampHalf += (this.extraHalf - this.clampHalf) * Math.min(1, dt * 2.5);
+    this.root.x = Math.max(BOUNDS.left + this.clampHalf, Math.min(BOUNDS.right - this.clampHalf, x));
 
     // 높이: 레인 + 감정 깊이(활발하면 위, 고요하면 아래) + 느린 출렁임
     this.bobPhase += dt * 0.6;
@@ -141,9 +145,16 @@ export class FishView {
     this.root.y = Math.max(BOUNDS.top, Math.min(BOUNDS.bottom, this.laneY - state.behavior.depth * 70));
   }
 
-  /** 무리 마리 수가 바뀌면 대열 폭을 새로 잡는다(벽 판정에 더함) */
-  setExtraHalfWidth(v: number) {
+  /**
+   * 무리 마리 수가 바뀌면 대열 폭을 새로 잡는다(벽 판정에 더함).
+   * immediate(움직임 줄이기·정지 그림)면 지금 자리를 새 안전 범위로 바로 옮기고, 아니면 다음 프레임부터 부드럽게 들어온다
+   */
+  setExtraHalfWidth(v: number, immediate = false) {
     this.extraHalf = v;
+    if (immediate) {
+      this.clampHalf = v;
+      this.root.x = Math.max(BOUNDS.left + v, Math.min(BOUNDS.right - v, this.root.x));
+    }
   }
 
   /** 지금 바라보는 방향(-1 ~ 1). 도는 중에는 부드럽게 바뀐다. 무리의 따르는 물고기가 대열을 돌릴 때 쓴다 */
