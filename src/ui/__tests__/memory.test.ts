@@ -3,6 +3,9 @@ import { ENGINE_VERSION } from '../../engine/config';
 import { GOLDEN_REPLAY } from '../../engine/__tests__/golden';
 import { littlePrinceConfig, littlePrinceEntries } from '../../engine/scenarios';
 import { TankSession } from '../../engine/session';
+import { computeFinale } from '../../engine/compute';
+import { CAPS } from '../../engine/config';
+import type { Snapshot } from '../../engine/types';
 import { memoryOf } from '../memory';
 
 function play(n = 14) {
@@ -58,5 +61,43 @@ describe('기억 보기: 요소가 어떤 기록에서 생기고 자랐는지(�
     expect(memoryOf(s.snapshots, s.entries, s.head.id, 'nope')).toBeNull();
     expect(ENGINE_VERSION).toBe('0.2.0');
     expect(TankSession.replay(littlePrinceConfig(), littlePrinceEntries())).toBe(GOLDEN_REPLAY[ENGINE_VERSION]);
+  });
+
+  it('완독: 대표 생물이 새로 생기면 "완성한 날"(완성 시각의 관장 날짜)과 엔진 문구, 마지막 기록의 마음은 쓰지 않는다', () => {
+    const s = play();
+    const at = Date.UTC(2026, 10, 30, 16, 30); // 서울 기준 12월 1일 01:30
+    s.finalize('completed', at);
+    const c = s.head.changes.find((x) => x.level === 'finale' && x.objectId)!;
+    expect(c.text).toContain('대표 생물이 되었어요');
+    const m = memoryOf(s.snapshots, s.entries, s.head.id, c.objectId!, 'Asia/Seoul')!;
+    expect(m.born).not.toBeNull(); // '처음부터 있던 요소' 아님
+    expect(m.born!.kind).toBe('finale');
+    expect(m.born!.date).toBe('2026-12-01');
+    expect(m.born!.text).toBe(c.text);
+    expect(m.born!.chips).toEqual([]);
+    expect(m.born!.note).toBe('');
+    expect(m.born!.pages).toBeNull();
+  });
+
+  it('완독: 자리가 없어 가장 오래된 물고기가 대표가 되면 원래 생긴 날은 그대로, "대표 생물이 된 날"이 더해진다', () => {
+    const s = play();
+    const head = s.head;
+    const oldest = [...head.state.objects].filter((o) => o.kind === 'fish').sort((a, b) => a.bornSeq - b.bornSeq)[0]!;
+    // 물고기 상한까지 채운 상태를 만들어 실제 엔진 computeFinale의 '승격' 경로를 탄다
+    const full = structuredClone(head);
+    let n = 900;
+    while (full.state.objects.filter((o) => o.kind === 'fish').length < CAPS.fish) full.state.objects.push({ ...oldest, id: `o${n++}`, bornSeq: 999 });
+    const out = computeFinale(full, head.cfg, head.seq);
+    const promo = out.changes.find((x) => x.objectId === oldest.id)!;
+    expect(promo.text.startsWith('가장 오래 함께한 물고기')).toBe(true);
+    const fin: Snapshot = { ...head, id: 'fin', baseId: head.id, kind: 'finale', entryId: null, input: null, state: out.state, ledger: out.ledger, changes: out.changes, confirmedAt: Date.UTC(2026, 10, 28, 3) };
+    const before = memoryOf(s.snapshots, s.entries, head.id, oldest.id)!;
+    const m = memoryOf([...s.snapshots, fin], s.entries, 'fin', oldest.id, 'Asia/Seoul')!;
+    expect(m.born).toEqual(before.born);
+    const last = m.grew.at(-1)!;
+    expect(last.kind).toBe('finale');
+    expect(last.date).toBe('2026-11-28');
+    expect(last.text).toBe(promo.text);
+    expect(last.chips).toEqual([]);
   });
 });

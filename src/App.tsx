@@ -138,6 +138,7 @@ export function App() {
     const next: Settings = { goalType: 'amount', total: 140, daily: 10, seedText: 'little-prince-7f3a' };
     setSettings(next);
     session.current = new TankSession(littlePrinceConfig(start, next.seedText));
+    setMemoryId(null); // 새 어항에서 같은 요소 id가 다시 쓰여도 예전 선택이 이어지지 않게
     inputLog.current = [];
     setNow(START_NOW);
     setLastChanges(null);
@@ -159,6 +160,7 @@ export function App() {
   const resetTank = (next = settings) => {
     stopDemo();
     session.current = new TankSession(makeConfig(next, today));
+    setMemoryId(null);
     inputLog.current = [];
     setLastChanges(null);
     bump();
@@ -199,7 +201,7 @@ export function App() {
           <AquariumCanvas ref={canvas} state={head.state} options={options} quality={quality} onObjectTap={setMemoryId} />
           {(() => {
             const obj = memoryId ? head.state.objects.find((o) => o.id === memoryId) : undefined;
-            const mem = obj ? memoryOf(s.snapshots, s.entries, head.id, obj.id) : null;
+            const mem = obj ? memoryOf(s.snapshots, s.entries, head.id, obj.id, TZ) : null;
             return obj && mem
               ? <MemoryCard memory={mem} kind={obj.kind} onClose={() => setMemoryId(null)} />
               : <p className="hint memory-hint">어항 속 물고기·수초·장식을 누르면 그 요소가 생긴 날의 기록을 볼 수 있어요.</p>;

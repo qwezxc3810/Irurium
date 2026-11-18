@@ -23,6 +23,7 @@ function Moment({ m, title }: { m: MemoryMoment; title: string }) {
         {m.chips.length > 0 && <> · {m.chips.map((c) => <span key={c} className="chip on small">{c}</span>)}</>}
       </div>
       {m.note && <p className="memory-note">“{m.note}”</p>}
+      {m.text && <p className="memory-why">{m.text}</p>}
       {m.entryState === 'edited' && <p className="hint">나중에 기록을 고쳤어요. 여기엔 이 요소가 생길 때의 마음이 보여요.</p>}
     </div>
   );
