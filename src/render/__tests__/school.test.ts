@@ -1,3 +1,4 @@
+import './nodeGlobals'; // 반드시 pixi.js보다 먼저
 import { describe, expect, it } from 'vitest';
 import { Texture } from 'pixi.js';
 import { FishView } from '../FishView';
