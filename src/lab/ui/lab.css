@@ -149,3 +149,8 @@ span.bad { color: var(--warn); font-size: 13px; }
 .se-stage img { position: relative; z-index: 1; max-width: 90%; max-height: 92%; object-fit: contain; }
 .se-stage.floor img { margin-bottom: 6%; }
 .se-choices .chip { min-width: 84px; }
+.se-stage.thumb { height: 120px; width: 100%; border-radius: 0; }
+.se-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.se-card { margin: 0; border: 1px solid var(--line, #ddd); border-radius: 12px; overflow: hidden; background: #fff; }
+.se-card figcaption { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px 8px; font-size: 13px; }
+.se-card figcaption small { color: var(--muted, #777); }

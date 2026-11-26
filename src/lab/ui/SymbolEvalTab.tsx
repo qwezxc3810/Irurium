@@ -15,7 +15,7 @@ const KEY_DONE = 'irurium.symbolEval.sessions';
 const KEY_REVEALED = 'irurium.symbolEval.revealedAt';
 const ELS = (manifestJson as { elements: Record<string, { displayHeight?: number; displayWidth?: number }> }).elements;
 /** 휴대폰 어항(논리 폭 1000 → 화면 폭 약 380px)에서 보이는 크기 비율 */
-const PHONE_SCALE = 0.38;
+const PHONE_SCALE = 0.38; // 근사값(기기마다 실제 크기는 다름)
 
 function load<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
@@ -99,7 +99,8 @@ export function SymbolEvalTab() {
           <label className="check"><input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} /> 실제 평가가 아니라 화면 시험이에요(판정에서 빼기)</label>
           <button type="button" className="wide" onClick={start}>평가 시작</button>
           {blocked && <p className="bad">{blocked}</p>}
-          <p className="hint">지금까지 이 기기에서 끝낸 평가: {done.length}개 (판정에 쓰는 실제 평가 {seCounted(done).length}개)</p>
+          <p className="hint">지금까지 이 기기에서 끝낸 평가: {done.length}개 (판정에 쓰는 유효 세션 {seCounted(done).length}개)</p>
+          <p className="hint">한 사람은 한 번만 해 주세요. 서로 다른 사람이 했는지는 진행자가 확인해요(집계는 세션 단위).</p>
         </section>
       )}
 
@@ -121,32 +122,38 @@ export function SymbolEvalTab() {
   );
 }
 
-function Picture({ item, size }: { item: SeItem; size: 'big' | 'phone' }) {
+function Picture({ item, size, onLoad, onError, retry = 0 }: { item: SeItem; size: 'big' | 'phone' | 'thumb'; onLoad?: () => void; onError?: () => void; retry?: number }) {
   const spec = ELS[item.el] ?? {};
-  const k = size === 'big' ? 1.6 : PHONE_SCALE;
-  const style = item.shape === 'swim' ? { width: Math.round((spec.displayWidth ?? 80) * k * (size === 'big' ? 1.6 : 1)) } : { height: Math.round((spec.displayHeight ?? 80) * k) };
+  const k = size === 'big' ? 1.6 : size === 'thumb' ? 1 : PHONE_SCALE;
+  const style = item.shape === 'swim' ? { width: Math.round((spec.displayWidth ?? 80) * k * (size === 'phone' ? 1 : 1.6)) } : { height: Math.round((spec.displayHeight ?? 80) * k) };
   return (
     <div className={`se-stage ${size} ${item.shape}`} style={{ backgroundImage: `url(${ASSET_BASE}themes/starlit-desert/background.webp)` }}>
-      <img src={`${ASSET_BASE}${item.src}`} alt="평가 그림" style={style} draggable={false} />
+      <img src={`${ASSET_BASE}${item.src}${retry ? `?r=${retry}` : ''}`} alt="평가 그림" style={style} draggable={false} onLoad={onLoad} onError={onError} />
     </div>
   );
 }
 
 function EvalStep({ item, index, total, onAnswer, onQuit }: { item: SeItem; index: number; total: number; onAnswer: (g: string) => void; onQuit: () => void }) {
+  // 그림이 다 뜨기 전에는 답할 수 없게(안 보이는 그림에 답하면 평가가 오염됨)
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [retry, setRetry] = useState(0);
   return (
     <section className="card">
       <div className="row spread">
         <h3 style={{ margin: 0 }}>{index + 1} / {total}</h3>
         <button type="button" className="link" onClick={onQuit}>그만하기(지금까지 답은 버림)</button>
       </div>
-      <Picture item={item} size="big" />
+      <Picture item={item} size="big" retry={retry} onLoad={() => setState('ok')} onError={() => setState('error')} />
+      {state === 'error' && (
+        <p className="bad">그림을 불러오지 못했어요. <button type="button" className="link" onClick={() => { setState('loading'); setRetry((r) => r + 1); }}>다시 불러오기</button></p>
+      )}
       <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-        <small className="hint">휴대폰 어항에서 보이는 크기:</small>
+        <small className="hint">휴대폰 어항에서 보이는 크기(근사):</small>
         <Picture item={item} size="phone" />
       </div>
       <p><b>이 흔적은 어떤 마음에서 생겼을까요?</b></p>
       <div className="chips se-choices">
-        {GUESS_OPTIONS.map((g) => <button key={g.id} type="button" className="chip" onClick={() => onAnswer(g.id)}>{g.label}</button>)}
+        {GUESS_OPTIONS.map((g) => <button key={g.id} type="button" className="chip" disabled={state !== 'ok'} onClick={() => onAnswer(g.id)}>{g.label}</button>)}
       </div>
     </section>
   );
@@ -163,7 +170,8 @@ function Results({ all, done, onImport, onDeleteLocal }: { all: SeSession[]; don
   return (
     <>
       <section className="card">
-        <h3>결과 {o.enough ? '' : `(보류: 실제 평가 ${o.evaluators}명, ${SE_CRITERIA.minEvaluators}명 이상 필요)`}</h3>
+        <h3>결과 {o.enough ? '' : `(보류: 유효 세션 ${o.evaluators}개, ${SE_CRITERIA.minEvaluators}개 이상 필요)`}</h3>
+        <p className="hint">유효한 평가 세션 {o.evaluators}개. 집계 단위는 세션이에요. 서로 다른 사람이 한 번씩 했는지는 진행자가 확인해 주세요.</p>
         <p className="hint">{o.evaluators < SE_CRITERIA.decisionEvaluators ? `탐색용 결과예요. 헷갈리는 상징과 혼동 패턴을 찾는 데 쓰고, 출시 판단은 ${SE_CRITERIA.decisionEvaluators}명 이상 별도 평가로 정해요.` : '판단용 인원을 채웠어요. 기준은 기획자가 확정해요.'}</p>
         <ul>
           <li>상징 12종 전체 맞힌 비율 <b>{Math.round(o.accuracy * 100)}%</b> (찍으면 약 8%), 모르겠어요 {Math.round(o.unsureRate * 100)}%</li>
@@ -191,6 +199,7 @@ function Results({ all, done, onImport, onDeleteLocal }: { all: SeSession[]; don
         </div>
         {copied && <p className="hint">{copied}</p>}
       </section>
+      <Gallery rows={rows} />
       <section className="card">
         <h3>다른 기기 평가 합치기</h3>
         <textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="다른 기기에서 복사한 평가 원본(JSON)을 붙여 넣어요" style={{ width: '100%' }} />
@@ -210,5 +219,28 @@ function Results({ all, done, onImport, onDeleteLocal }: { all: SeSession[]; don
         </table></div>
       </section>
     </>
+  );
+}
+
+/** 12종 한눈에 보기(결과 화면에서만 = 평가가 끝난 뒤에만). 상징 12종과 대조 2종을 나눠 보여 준다 */
+function Gallery({ rows }: { rows: ReturnType<typeof seSummary> }) {
+  const card = (r: (typeof rows)[number]) => (
+    <figure key={r.item.id} className="se-card">
+      <Picture item={r.item} size="thumb" />
+      <figcaption>
+        <b>{r.item.name}</b>
+        <span>{r.item.truth ? guessLabel(r.item.truth) : '감정과 무관'}</span>
+        <small>{r.item.truth ? `맞힘 ${r.correct}/${r.n} · ${SE_LABEL[r.label]}` : `감정으로 고름 ${r.n - r.unsure}/${r.n}`}{r.topWrong ? ` · 헷갈림: ${guessLabel(r.topWrong.guess)}` : ''}</small>
+      </figcaption>
+    </figure>
+  );
+  return (
+    <section className="card">
+      <h3>상징 12종 한눈에 보기</h3>
+      <p className="hint">평가가 끝난 뒤에만 볼 수 있어요(정답 공개). 실루엣끼리 비슷한 것이 없는지 함께 봐요.</p>
+      <div className="se-gallery">{rows.filter((r) => r.item.truth).map(card)}</div>
+      <h4>대조 그림(감정과 무관)</h4>
+      <div className="se-gallery">{rows.filter((r) => !r.item.truth).map(card)}</div>
+    </section>
   );
 }

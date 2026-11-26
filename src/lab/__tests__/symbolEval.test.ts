@@ -80,12 +80,43 @@ describe('감정 상징 평가: 세션·집계', () => {
   it(`${SE_CRITERIA.minEvaluators}명 미만이면 보류`, () => {
     const o = seOverview([finished('a', right), finished('bb', right)]);
     expect(o.enough).toBe(false);
-    expect(formatSeReport([finished('a', right)])).toContain('3명 미만이라 보류');
+    expect(formatSeReport([finished('a', right)])).toContain('세션 3개 미만이라 보류');
   });
 
   it('대조 그림에 감정을 고르면 그 비율이 잡힌다', () => {
     const o = seOverview(['a', 'bb', 'ccc'].map((id) => finished(id, (t) => t ?? 'emo.joy')));
     expect(o.controlEmotionRate).toBe(1);
     expect(o.accuracy).toBe(1);
+  });
+});
+
+describe('리뷰 반영(PR #27)', () => {
+  it('집계 단위는 세션: 같은 별칭이 다른 세션으로 두 번 하면 "세션 2개"로 세고 사람 수라고 말하지 않는다', () => {
+    const a = { ...finished('a', right), evaluator: '민' };
+    const b = { ...finished('bb', right), evaluator: '민' };
+    const o = seOverview([a, b]);
+    expect(o.evaluators).toBe(2);
+    const rep = formatSeReport([a, b]);
+    expect(rep).toContain('유효한 평가 세션 2개');
+    expect(rep).not.toMatch(/실제 평가 \d+명/);
+    expect(rep).toContain('서로 다른 사람이 한 번씩 했는지는 진행자가 확인');
+    expect(evalTabSource).not.toMatch(/실제 평가 \$\{/);
+  });
+
+  it('12종 한눈에 보기: 결과 화면에서만(평가 화면엔 없음), 상징 12종과 대조 2종을 나눠 보여 준다', () => {
+    const results = evalTabSource.slice(evalTabSource.indexOf('function Results'));
+    const step = evalTabSource.slice(evalTabSource.indexOf('function EvalStep'), evalTabSource.indexOf('function Results'));
+    expect(results).toMatch(/<Gallery rows=\{rows\} \/>/);
+    expect(step).not.toMatch(/Gallery/);
+    expect(evalTabSource).toMatch(/rows\.filter\(\(r\) => r\.item\.truth\)\.map\(card\)/);
+    expect(evalTabSource).toMatch(/rows\.filter\(\(r\) => !r\.item\.truth\)\.map\(card\)/);
+    // 평가 중에는 결과(정답) 화면 버튼이 꺼진다
+    expect(evalTabSource).toMatch(/disabled=\{!!current\} onClick=\{\(\) => setMode\('results'\)\}/);
+    expect(seSummary([]).filter((r) => r.item.truth)).toHaveLength(12);
+  });
+
+  it('그림이 뜨기 전·실패하면 답할 수 없다(다시 불러오기)', () => {
+    expect(evalTabSource).toMatch(/disabled=\{state !== 'ok'\}/);
+    expect(evalTabSource).toMatch(/onError=\{\(\) => setState\('error'\)\}/);
   });
 });

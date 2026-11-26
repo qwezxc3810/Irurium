@@ -8,10 +8,12 @@ import { mulberry32 } from '../engine/random';
  * - 12종 상징 + 대조 2개(감정과 무관한 기본 생태계 그림: 송사리·둥근 수석)
  * - 평가 중에는 이름·정답을 보여 주지 않는다. 순서는 세션마다 무작위
  * - 3명은 탐색용(헷갈리는 상징·혼동 패턴 찾기). 성공·출시 판단은 5명 이상 별도 평가로 정한다(PR #26 리뷰)
+ * - 집계 단위는 '유효한 평가 세션'이다. 별칭은 선택이라 같은 사람이 여러 번 했는지 자동으로 알 수 없다.
+ *   서로 다른 사람인지는 진행자가 확인한다(PR #27 리뷰)
  */
 export const SE_SCHEMA = 'irurium.symbol-eval.v1';
 export const SE_CRITERIA = {
-  /** 탐색 결과를 보여 주는 최소 인원 */
+  /** 탐색 결과를 보여 주는 최소 유효 세션 수(서로 다른 사람 3명이 하는 것을 전제로, 확인은 진행자가) */
   minEvaluators: 3,
   /** 출시 판단용(별도 평가) 권장 인원 */
   decisionEvaluators: 5,
@@ -184,6 +186,7 @@ export function seSummary(sessions: SeSession[]): SeItemSummary[] {
 }
 
 export interface SeOverview {
+  /** 유효한 평가 세션 수(사람 수가 아님: 같은 사람이 여러 번 했는지는 알 수 없음) */
   evaluators: number;
   enough: boolean;
   /** 상징 12종 전체 맞힌 비율 */
@@ -221,7 +224,9 @@ export function formatSeReport(sessions: SeSession[]): string {
   const L: string[] = [];
   L.push(`# 감정 상징 평가(블라인드) — 엔진 ${ENGINE_VERSION}`);
   L.push('');
-  L.push(`실제 평가 ${o.evaluators}명, 판정에서 뺀 세션 ${excluded}개. ${o.enough ? '' : `**${SE_CRITERIA.minEvaluators}명 미만이라 보류.** `}${o.evaluators < SE_CRITERIA.decisionEvaluators ? `탐색용 결과예요(출시 판단은 ${SE_CRITERIA.decisionEvaluators}명 이상 별도 평가).` : ''}`);
+  L.push(`유효한 평가 세션 ${o.evaluators}개, 판정에서 뺀 세션 ${excluded}개. ${o.enough ? '' : `**세션 ${SE_CRITERIA.minEvaluators}개 미만이라 보류.** `}${o.evaluators < SE_CRITERIA.decisionEvaluators ? `탐색용 결과예요(출시 판단은 ${SE_CRITERIA.decisionEvaluators}명 이상 별도 평가).` : ''}`);
+  L.push('');
+  L.push('> 집계 단위는 세션이에요. 서로 다른 사람이 한 번씩 했는지는 진행자가 확인해 주세요(별칭은 선택이라 자동으로 알 수 없어요).');
   L.push('');
   L.push(`- 상징 12종 전체 맞힌 비율 ${pct(o.accuracy)} (찍으면 약 8%), 모르겠어요 ${pct(o.unsureRate)}`);
   L.push(`- 대조 그림(송사리·둥근 수석)에 감정을 고른 비율 ${pct(o.controlEmotionRate)}`);
