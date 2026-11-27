@@ -3,8 +3,8 @@ import manifestJson from '../../../public/assets/manifest.json';
 import { ASSET_BASE } from '../../assets/manifest';
 import { canStartEvaluation, isBlindBreach, REVEAL_HEARTBEAT_MS } from '../visualEval';
 import {
-  formatSeReport, GUESS_OPTIONS, guessLabel, newSeSession, parseSeSessions, SE_CRITERIA, SE_LABEL, seCounted, seExclusion, seItems, seOverview, seSummary,
-  type SeItem, type SeSession,
+  closeCollection, formatSeReport, GUESS_OPTIONS, guessLabel, mayStartEval, newSeSession, parseSeSessions, reopenCollection, resultsVisible, SE_COLLECTION_OPEN, SE_CRITERIA, SE_LABEL,
+  seCounted, seExclusion, seItems, seOverview, seSummary, startedAfterReveal, type SeCollection, type SeItem, type SeSession,
 } from '../symbolEval';
 
 /**
@@ -13,6 +13,8 @@ import {
  */
 const KEY_DONE = 'irurium.symbolEval.sessions';
 const KEY_REVEALED = 'irurium.symbolEval.revealedAt';
+/** 수집 상태: 진행자가 수집을 끝내야 결과·정답을 볼 수 있다 */
+const KEY_COLLECTION = 'irurium.symbolEval.collection';
 const ELS = (manifestJson as { elements: Record<string, { displayHeight?: number; displayWidth?: number }> }).elements;
 /** 휴대폰 어항(논리 폭 1000 → 화면 폭 약 380px)에서 보이는 크기 비율 */
 const PHONE_SCALE = 0.38; // 근사값(기기마다 실제 크기는 다름)
@@ -35,7 +37,23 @@ export function SymbolEvalTab() {
   const [evaluator, setEvaluator] = useState('');
   const [trial, setTrial] = useState(false);
   const [blocked, setBlocked] = useState('');
+  const [collection, setCollection] = useState<SeCollection>(() => load<SeCollection>(KEY_COLLECTION, SE_COLLECTION_OPEN));
+  const [confirmClose, setConfirmClose] = useState(false);
   useEffect(() => save(KEY_DONE, done), [done]);
+  useEffect(() => save(KEY_COLLECTION, collection), [collection]);
+  // 다른 탭에서 수집 상태가 바뀌면 따라간다(결과가 다시 닫히면 이 탭의 결과 화면도 닫음)
+  useEffect(() => {
+    const on = (e: StorageEvent) => {
+      if (e.key === KEY_COLLECTION) {
+        const c = load<SeCollection>(KEY_COLLECTION, SE_COLLECTION_OPEN);
+        setCollection(c);
+        if (!resultsVisible(c)) setMode((m) => (m === 'results' ? 'intro' : m));
+      }
+      if (e.key === KEY_DONE) setDone(load<SeSession[]>(KEY_DONE, []));
+    };
+    window.addEventListener('storage', on);
+    return () => window.removeEventListener('storage', on);
+  }, []);
 
   // 정답 화면이 열려 있는 동안 시각을 계속 남긴다(다른 탭의 평가가 블라인드 위반인지 판단)
   useEffect(() => {
@@ -47,6 +65,10 @@ export function SymbolEvalTab() {
   }, [mode]);
 
   const start = () => {
+    if (!mayStartEval(collection)) {
+      setBlocked('평가 수집이 끝나 정답이 공개된 상태예요. 다시 평가하려면 진행자가 "수집 다시 열기"를 눌러 주세요.');
+      return;
+    }
     if (!canStartEvaluation(load<string | null>(KEY_REVEALED, null), Date.now())) {
       setBlocked('다른 탭(또는 창)에 정답 화면이 열려 있어요. 그 화면을 닫고 몇 초 뒤 다시 시작해 주세요.');
       return;
@@ -81,9 +103,27 @@ export function SymbolEvalTab() {
         <p>어항에 남는 감정 흔적(상징) 12종이 그림만 보고도 어떤 마음인지 읽히는지 확인해요. 감정과 상관없는 대조 그림 2개도 섞여 있어요.</p>
         <div className="chips">
           <button type="button" className={mode !== 'results' ? 'chip on' : 'chip'} onClick={() => setMode(current ? 'eval' : 'intro')}>평가하기</button>
-          <button type="button" className={mode === 'results' ? 'chip on' : 'chip'} disabled={!!current} onClick={() => setMode('results')}>결과 보기 (정답 공개)</button>
+          {resultsVisible(collection) && <button type="button" className={mode === 'results' ? 'chip on' : 'chip'} disabled={!!current} onClick={() => setMode('results')}>결과 보기 (정답 공개)</button>}
         </div>
-        {current && <p className="hint">평가 중에는 정답 화면을 열 수 없어요.</p>}
+        {!resultsVisible(collection) ? (
+          <div className="se-admin">
+            <p className="hint">평가를 모으는 중이에요. 결과와 정답은 <b>진행자가 수집을 끝낸 뒤</b>에만 볼 수 있어요(평가 전·평가자 사이에 정답이 보이지 않게).</p>
+            {!current && (!confirmClose ? (
+              <button type="button" className="link" onClick={() => setConfirmClose(true)}>진행자: 수집 끝내고 결과 보기</button>
+            ) : (
+              <p>
+                모든 평가자가 끝났나요? 결과를 열면 이 기기에서 정답이 공개돼요.{' '}
+                <button type="button" onClick={() => { setCollection((c) => closeCollection(c, new Date())); setConfirmClose(false); setMode('results'); }}>네, 수집 끝내고 결과 보기</button>{' '}
+                <button type="button" className="link" onClick={() => setConfirmClose(false)}>취소</button>
+              </p>
+            ))}
+          </div>
+        ) : (
+          <div className="se-admin">
+            <p className="hint">수집이 끝나 정답이 공개된 상태예요. 새 평가를 받으려면 수집을 다시 여세요(결과는 다시 닫혀요). 정답이 공개된 뒤 시작한 평가는 목록에 표시돼요.</p>
+            <button type="button" className="link" onClick={() => { setCollection((c) => reopenCollection(c)); setMode('intro'); }}>진행자: 수집 다시 열기</button>
+          </div>
+        )}
       </section>
 
       {mode === 'intro' && (
@@ -117,7 +157,7 @@ export function SymbolEvalTab() {
         </section>
       )}
 
-      {mode === 'results' && <Results all={all} done={done} onImport={(xs) => setImported((p) => [...p, ...xs])} onDeleteLocal={(id) => setDone((d) => d.filter((s) => s.id !== id))} />}
+      {mode === 'results' && resultsVisible(collection) && <Results collection={collection} all={all} done={done} onImport={(xs) => setImported((p) => [...p, ...xs])} onDeleteLocal={(id) => setDone((d) => d.filter((s) => s.id !== id))} />}
     </div>
   );
 }
@@ -135,21 +175,24 @@ function Picture({ item, size, onLoad, onError, retry = 0 }: { item: SeItem; siz
 
 function EvalStep({ item, index, total, onAnswer, onQuit }: { item: SeItem; index: number; total: number; onAnswer: (g: string) => void; onQuit: () => void }) {
   // 그림이 다 뜨기 전에는 답할 수 없게(안 보이는 그림에 답하면 평가가 오염됨)
-  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [big, setBig] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [small, setSmall] = useState<'loading' | 'ok' | 'error'>('loading');
   const [retry, setRetry] = useState(0);
+  // 큰 그림과 휴대폰 크기 그림이 모두 떠야 답할 수 있다(작은 크기 판독도 평가 대상)
+  const state = big === 'error' || small === 'error' ? 'error' : big === 'ok' && small === 'ok' ? 'ok' : 'loading';
   return (
     <section className="card">
       <div className="row spread">
         <h3 style={{ margin: 0 }}>{index + 1} / {total}</h3>
         <button type="button" className="link" onClick={onQuit}>그만하기(지금까지 답은 버림)</button>
       </div>
-      <Picture item={item} size="big" retry={retry} onLoad={() => setState('ok')} onError={() => setState('error')} />
+      <Picture item={item} size="big" retry={retry} onLoad={() => setBig('ok')} onError={() => setBig('error')} />
       {state === 'error' && (
-        <p className="bad">그림을 불러오지 못했어요. <button type="button" className="link" onClick={() => { setState('loading'); setRetry((r) => r + 1); }}>다시 불러오기</button></p>
+        <p className="bad">그림을 불러오지 못했어요. <button type="button" className="link" onClick={() => { setBig('loading'); setSmall('loading'); setRetry((r) => r + 1); }}>다시 불러오기</button></p>
       )}
       <div className="row" style={{ alignItems: 'center', gap: 8 }}>
         <small className="hint">휴대폰 어항에서 보이는 크기(근사):</small>
-        <Picture item={item} size="phone" />
+        <Picture item={item} size="phone" retry={retry} onLoad={() => setSmall('ok')} onError={() => setSmall('error')} />
       </div>
       <p><b>이 흔적은 어떤 마음에서 생겼을까요?</b></p>
       <div className="chips se-choices">
@@ -159,10 +202,10 @@ function EvalStep({ item, index, total, onAnswer, onQuit }: { item: SeItem; inde
   );
 }
 
-function Results({ all, done, onImport, onDeleteLocal }: { all: SeSession[]; done: SeSession[]; onImport: (xs: SeSession[]) => void; onDeleteLocal: (id: string) => void }) {
+function Results({ collection, all, done, onImport, onDeleteLocal }: { collection: SeCollection; all: SeSession[]; done: SeSession[]; onImport: (xs: SeSession[]) => void; onDeleteLocal: (id: string) => void }) {
   const o = seOverview(all);
   const rows = seSummary(all);
-  const report = formatSeReport(all);
+  const report = formatSeReport(all, collection);
   const [text, setText] = useState('');
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState('');
@@ -212,7 +255,8 @@ function Results({ all, done, onImport, onDeleteLocal }: { all: SeSession[]; don
           <thead><tr><th>별칭</th><th>시작</th><th>상태</th><th></th></tr></thead>
           <tbody>{all.map((s) => (
             <tr key={s.id + s.startedAt}>
-              <td>{s.evaluator || '—'}</td><td>{new Date(s.startedAt).toLocaleString()}</td><td>{seExclusion(s) ?? '판정에 씀'}</td>
+              <td>{s.evaluator || '—'}</td><td>{new Date(s.startedAt).toLocaleString()}</td>
+              <td>{seExclusion(s) ?? '판정에 씀'}{startedAfterReveal(s, collection) && <span className="bad"> · 정답 공개 뒤 시작(정답을 본 사람이 아닌지 확인)</span>}</td>
               <td>{done.some((d) => d.id === s.id) && <button type="button" className="link" onClick={() => onDeleteLocal(s.id)}>지우기</button>}</td>
             </tr>
           ))}</tbody>

@@ -217,7 +217,7 @@ export function seOverview(sessions: SeSession[]): SeOverview {
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-export function formatSeReport(sessions: SeSession[]): string {
+export function formatSeReport(sessions: SeSession[], collection?: SeCollection): string {
   const o = seOverview(sessions);
   const rows = seSummary(sessions);
   const excluded = sessions.filter((s) => seExclusion(s)).length;
@@ -227,6 +227,8 @@ export function formatSeReport(sessions: SeSession[]): string {
   L.push(`유효한 평가 세션 ${o.evaluators}개, 판정에서 뺀 세션 ${excluded}개. ${o.enough ? '' : `**세션 ${SE_CRITERIA.minEvaluators}개 미만이라 보류.** `}${o.evaluators < SE_CRITERIA.decisionEvaluators ? `탐색용 결과예요(출시 판단은 ${SE_CRITERIA.decisionEvaluators}명 이상 별도 평가).` : ''}`);
   L.push('');
   L.push('> 집계 단위는 세션이에요. 서로 다른 사람이 한 번씩 했는지는 진행자가 확인해 주세요(별칭은 선택이라 자동으로 알 수 없어요).');
+  const after = collection ? seCounted(sessions).filter((x) => startedAfterReveal(x, collection)).length : 0;
+  if (after) L.push(`> ⚠️ 이 기기에서 정답이 공개된 뒤 시작한 세션 ${after}개가 집계에 들어 있어요. 정답을 본 사람이 아닌지 확인하고, 봤다면 빼 주세요.`);
   L.push('');
   L.push(`- 상징 12종 전체 맞힌 비율 ${pct(o.accuracy)} (찍으면 약 8%), 모르겠어요 ${pct(o.unsureRate)}`);
   L.push(`- 대조 그림(송사리·둥근 수석)에 감정을 고른 비율 ${pct(o.controlEmotionRate)}`);
@@ -240,4 +242,32 @@ export function formatSeReport(sessions: SeSession[]): string {
     L.push(`| ${r.item.name} | ${truth} | ${hit} | ${r.unsure}/${r.n} | ${r.topWrong ? `${guessLabel(r.topWrong.guess)} ${r.topWrong.n}` : '—'} | ${SE_LABEL[r.label]} |`);
   }
   return L.join('\n');
+}
+
+// ───────── 수집 상태(PR #27 재리뷰: 정답은 진행자가 수집을 끝낸 뒤에만) ─────────
+/**
+ * 이 기기의 평가 수집 상태.
+ * - open(기본): 평가할 수 있고, 결과·정답·갤러리는 볼 수 없다(평가 전·평가자 사이 노출 방지)
+ * - closed: 진행자가 '수집 종료'를 고른 뒤. 결과·정답을 볼 수 있고, 새 평가는 시작할 수 없다
+ * - 다시 열면 결과는 다시 닫힌다. 정답이 한 번이라도 공개된 뒤 시작한 세션은 표시해서 진행자가 확인하게 한다
+ */
+export interface SeCollection {
+  state: 'open' | 'closed';
+  closedAt?: string;
+  /** 이 기기에서 정답이 처음 공개된 시각 */
+  firstRevealAt?: string;
+}
+export const SE_COLLECTION_OPEN: SeCollection = { state: 'open' };
+export const resultsVisible = (c: SeCollection) => c.state === 'closed';
+export const mayStartEval = (c: SeCollection) => c.state === 'open';
+export function closeCollection(c: SeCollection, now: Date): SeCollection {
+  const t = now.toISOString();
+  return { state: 'closed', closedAt: t, firstRevealAt: c.firstRevealAt ?? t };
+}
+export function reopenCollection(c: SeCollection): SeCollection {
+  return { state: 'open', ...(c.firstRevealAt ? { firstRevealAt: c.firstRevealAt } : {}) };
+}
+/** 정답이 공개된 뒤 시작한 세션인지(같은 기기). 자동으로 빼지는 않고 진행자가 확인하게 표시한다 */
+export function startedAfterReveal(s: Pick<SeSession, 'startedAt'>, c: SeCollection): boolean {
+  return !!c.firstRevealAt && Date.parse(s.startedAt) > Date.parse(c.firstRevealAt);
 }

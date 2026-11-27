@@ -5,6 +5,7 @@ import {
   type SeSession,
 } from '../symbolEval';
 import evalTabSource from '../ui/SymbolEvalTab.tsx?raw';
+import { closeCollection, mayStartEval, reopenCollection, resultsVisible, SE_COLLECTION_OPEN, startedAfterReveal } from '../symbolEval';
 
 const T = new Date('2026-11-27T01:00:00Z');
 function finished(id: string, pick: (truth: string | null, itemId: string) => string, origin: SeSession['origin'] = 'human'): SeSession {
@@ -110,13 +111,54 @@ describe('리뷰 반영(PR #27)', () => {
     expect(step).not.toMatch(/Gallery/);
     expect(evalTabSource).toMatch(/rows\.filter\(\(r\) => r\.item\.truth\)\.map\(card\)/);
     expect(evalTabSource).toMatch(/rows\.filter\(\(r\) => !r\.item\.truth\)\.map\(card\)/);
-    // 평가 중에는 결과(정답) 화면 버튼이 꺼진다
-    expect(evalTabSource).toMatch(/disabled=\{!!current\} onClick=\{\(\) => setMode\('results'\)\}/);
+    // 결과(정답) 화면은 수집이 끝났을 때만, 평가 중에는 꺼진다
+    expect(evalTabSource).toMatch(/\{resultsVisible\(collection\) && <button[^>]*disabled=\{!!current\} onClick=\{\(\) => setMode\('results'\)\}/);
     expect(seSummary([]).filter((r) => r.item.truth)).toHaveLength(12);
   });
 
   it('그림이 뜨기 전·실패하면 답할 수 없다(다시 불러오기)', () => {
     expect(evalTabSource).toMatch(/disabled=\{state !== 'ok'\}/);
-    expect(evalTabSource).toMatch(/onError=\{\(\) => setState\('error'\)\}/);
+    // 큰 그림·휴대폰 크기 그림 둘 다 떠야 답할 수 있다(재리뷰 참고 반영)
+    expect(evalTabSource).toMatch(/big === 'ok' && small === 'ok' \? 'ok'/);
+    expect(evalTabSource).toMatch(/size="phone" retry=\{retry\} onLoad=\{\(\) => setSmall\('ok'\)\} onError=\{\(\) => setSmall\('error'\)\}/);
+  });
+});
+
+describe('리뷰 반영(PR #27 재리뷰): 정답은 진행자가 수집을 끝낸 뒤에만', () => {
+  it('처음(완료 0개): 결과·정답을 볼 수 없고 평가는 시작할 수 있다', () => {
+    expect(resultsVisible(SE_COLLECTION_OPEN)).toBe(false);
+    expect(mayStartEval(SE_COLLECTION_OPEN)).toBe(true);
+  });
+
+  it('1번째 평가 끝 → 2번째 시작 전에도 수집 중이면 결과를 볼 수 없다(완료 세션 수와 무관)', () => {
+    const done = [finished('a', right)];
+    expect(done).toHaveLength(1);
+    expect(resultsVisible(SE_COLLECTION_OPEN)).toBe(false);
+  });
+
+  it('진행자가 수집을 끝내면 결과·갤러리를 볼 수 있고 새 평가는 막힌다. 다시 열면 결과가 다시 닫힌다', () => {
+    const closed = closeCollection(SE_COLLECTION_OPEN, new Date('2026-11-27T02:00:00Z'));
+    expect(resultsVisible(closed)).toBe(true);
+    expect(mayStartEval(closed)).toBe(false);
+    const reopened = reopenCollection(closed);
+    expect(resultsVisible(reopened)).toBe(false);
+    expect(mayStartEval(reopened)).toBe(true);
+    expect(reopened.firstRevealAt).toBe('2026-11-27T02:00:00.000Z');
+  });
+
+  it('정답이 공개된 뒤 시작한 세션은 표시하고 보고서에서 확인을 요청한다(자동으로 빼지는 않음)', () => {
+    const c = reopenCollection(closeCollection(SE_COLLECTION_OPEN, new Date('2026-11-27T02:00:00Z')));
+    const before = finished('a', right); // 01:00 시작
+    const after = { ...finished('bb', right), startedAt: '2026-11-27T03:00:00Z' };
+    expect(startedAfterReveal(before, c)).toBe(false);
+    expect(startedAfterReveal(after, c)).toBe(true);
+    expect(formatSeReport([before, after], c)).toContain('정답이 공개된 뒤 시작한 세션 1개');
+    expect(seCounted([before, after])).toHaveLength(2);
+  });
+
+  it('화면 연결: 결과 화면은 수집이 끝났을 때만 그리고, 수집이 끝나면 평가 시작이 막힌다', () => {
+    expect(evalTabSource).toMatch(/mode === 'results' && resultsVisible\(collection\) && <Results/);
+    expect(evalTabSource).toMatch(/if \(!mayStartEval\(collection\)\)/);
+    expect(evalTabSource).toMatch(/네, 수집 끝내고 결과 보기/);
   });
 });
