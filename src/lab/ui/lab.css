@@ -138,3 +138,19 @@ span.bad { color: var(--warn); font-size: 13px; }
 .ve-compare-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .ve-compare-row img { width: 100%; border-radius: 6px; display: block; }
 .thumb-wait { aspect-ratio: 5 / 3; background: #0b1f33; color: #9fb3c8; font-size: 12px; display: grid; place-items: center; border-radius: 6px; }
+
+/* 감정 상징 평가 */
+.se-stage { position: relative; background-size: cover; background-position: center 70%; border-radius: 12px; overflow: hidden; display: flex; justify-content: center; }
+.se-stage.big { height: 220px; margin: 8px 0; }
+.se-stage.phone { height: 56px; width: 110px; }
+.se-stage.floor { align-items: flex-end; }
+.se-stage.floor::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 18%; background: linear-gradient(#e9c98a, #d9b26a); z-index: 0; }
+.se-stage.swim, .se-stage.float { align-items: center; }
+.se-stage img { position: relative; z-index: 1; max-width: 90%; max-height: 92%; object-fit: contain; }
+.se-stage.floor img { margin-bottom: 6%; }
+.se-choices .chip { min-width: 84px; }
+.se-stage.thumb { height: 120px; width: 100%; border-radius: 0; }
+.se-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.se-card { margin: 0; border: 1px solid var(--line, #ddd); border-radius: 12px; overflow: hidden; background: #fff; }
+.se-card figcaption { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px 8px; font-size: 13px; }
+.se-card figcaption small { color: var(--muted, #777); }
