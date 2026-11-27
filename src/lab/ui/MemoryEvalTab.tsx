@@ -3,8 +3,8 @@ import { ASSET_BASE } from '../../assets/manifest';
 import { emotionById } from '../../engine/mood';
 import {
   CONDITION_LABEL, CONDITIONS, CONFIDENCE_LABEL, confusions, elapsedHours, exposureSplit, formatMeReport, groupSummary, hoursSinceExposure, ME_CRITERIA,
-  meCounted, meExclusion, meItems, newParticipant, newTest, nextCondition, parseParticipants, RECALL_OPTIONS, stageOf,
-  type MeAnswer, type MeCondition, type MeConfidence, type MeParticipant, type MeRecall,
+  meCounted, meExclusion, meItems, newParticipant, newTest, nextCondition, parseParticipants, PRIOR_LABEL, priorExposure, RECALL_OPTIONS, stageOf, viewStats,
+  type MeAnswer, type MePrior, type MeCondition, type MeConfidence, type MeParticipant, type MeRecall,
 } from '../memoryEval';
 import { closeCollection, GUESS_OPTIONS, guessLabel, mayStartEval, reopenCollection, resultsVisible, SE_COLLECTION_OPEN, type SeCollection, type SeItem } from '../symbolEval';
 import { canStartEvaluation, isBlindBreach, REVEAL_HEARTBEAT_MS } from '../visualEval';
@@ -154,7 +154,8 @@ export function MemoryEvalTab() {
             <label className="check"><input type="checkbox" checked={trial} onChange={(e) => setTrial(e.target.checked)} /> 실제 평가가 아니라 화면 시험이에요(판정에서 빼기)</label>
             <button type="button" className="wide" onClick={begin}>시작</button>
             {blocked && <p className="bad">{blocked}</p>}
-            <p className="hint">세 단계를 마친 참여자 {meCounted(ps).length}명 · 진행 중 {pending.length}명. 3명은 탐색용이에요.</p>
+            <p className="hint">세 단계를 마친 유효한 참여자 기록 {meCounted(ps).length}건 · 진행 중 {pending.length}건.</p>
+            <p className="hint"><b>3명 탐색 권장 배정:</b> 체험 / 노출 없음(대조) / 체험+도감 한 명씩(자동 배정이 이 순서예요). 조건 4개를 3명에 다 나눌 수 없고, 조건별 1명으로는 효과를 판단할 수 없어요. 반복되는 혼동과 화면 이해 문제를 찾는 데만 써요. 한 사람은 한 번만 참여해 주세요(서로 다른 사람인지는 진행자가 확인).</p>
           </section>
         </>
       )}
@@ -171,12 +172,24 @@ export function MemoryEvalTab() {
 function Run({ p, items, onUpdate, onExit }: { p: MeParticipant; items: Map<string, SeItem>; onUpdate: (p: MeParticipant) => void; onExit: () => void }) {
   const st = stageOf(p, Date.now());
   // A·C 문항 순서는 그 단계를 처음 열 때 한 번 만든다(시작 시각 = C의 경과 시간 기준)
-  const missing = (st === 'a' || st === 'c') && !p[st];
+  const missing = (st === 'a' || st === 'c') && !p[st] && p[st === 'a' ? 'priorA' : 'priorC'] !== undefined;
   useEffect(() => {
     if (missing) onUpdate({ ...p, [st]: newTest(rnd(), new Date()) });
   }, [missing, st, p, onUpdate]);
   if (st === 'a' || st === 'c') {
     const key = st;
+    const priorKey = key === 'a' ? 'priorA' : 'priorC';
+    if (p[priorKey] === undefined && !p[key]?.answers.length) {
+      return (
+        <section className="card">
+          <p style={{ marginTop: 0 }}>참여자 <b>{p.code}</b></p>
+          <h3>{key === 'a' ? '시작 전에 하나만 물어볼게요' : '이어서 하기 전에 하나만 물어볼게요'}</h3>
+          <p>{key === 'a' ? '이루리움 앱의 "감정 도감"이나 검증실의 "감정 상징 평가" 결과 화면을 본 적 있나요?' : '어제 체험 뒤에 감정 도감이나 앱을 따로 찾아본 적 있나요?'}</p>
+          <div className="chips">{(Object.keys(PRIOR_LABEL) as MePrior[]).map((k) => <button key={k} type="button" className="chip" onClick={() => onUpdate({ ...p, [priorKey]: k })}>{PRIOR_LABEL[k]}</button>)}</div>
+          <p className="hint">봤어도 괜찮아요. 결과를 읽을 때 참고만 해요.</p>
+        </section>
+      );
+    }
     const t = p[key];
     if (!t) return null;
     const onAnswer = (a: MeAnswer) => {
@@ -291,8 +304,10 @@ function Results({ all, local, items, onImport, onDeleteLocal }: { all: MePartic
   return (
     <>
       <section className="card">
-        <h3>결과 {counted.length < ME_CRITERIA.minParticipants ? `(보류: 완료 ${counted.length}명, ${ME_CRITERIA.minParticipants}명 이상 필요)` : '(탐색용)'}</h3>
-        <p className="hint">정답률이 올라도 같은 그림을 두 번 본 효과일 수 있어요. '노출 없음(대조)'과 비교해 봐요. 회상은 정답률과 따로 봐요.</p>
+        <h3>결과 {counted.length < ME_CRITERIA.minParticipants ? `(보류: 유효 기록 ${counted.length}건, ${ME_CRITERIA.minParticipants}건 이상 필요)` : '(탐색용)'}</h3>
+        <p className="hint">유효한 참여자 기록 {counted.length}건(같은 사람이 다른 코드로 했는지는 진행자가 확인). 정답률이 올라도 같은 그림을 두 번 본 효과일 수 있어요. '노출 없음(대조)'과 비교해 봐요. 조건별 1~2명이면 효과를 판단할 수 없어요.</p>
+        <p className="hint">회상은 스스로 느낀 떠오름 정도예요. 실제 기록 내용을 맞게 떠올렸는지 확인한 값은 아니에요.</p>
+        {counted.some((p) => priorExposure(p)) && <p className="bad">정답 노출이 의심되는 기록이 있어요: {counted.filter((p) => priorExposure(p)).map((p) => `${p.code}(${priorExposure(p)})`).join(', ')}. 빼고도 결론이 같은지 확인해 주세요.</p>}
         <h4>정답률 (상징 12종)</h4>
         <div className="table-wrap"><table>
           <thead><tr><th>조건</th><th>인원</th><th>첫인상</th><th>다음 날</th><th>모름</th><th>확신</th><th>경과</th></tr></thead>
@@ -325,11 +340,11 @@ function Results({ all, local, items, onImport, onDeleteLocal }: { all: MePartic
       <section className="card">
         <h3>참여자 목록</h3>
         <div className="table-wrap"><table>
-          <thead><tr><th>코드</th><th>조건</th><th>경과</th><th>상태</th><th></th></tr></thead>
+          <thead><tr><th>코드</th><th>조건</th><th>경과</th><th>체험 본 시간</th><th>상태</th><th></th></tr></thead>
           <tbody>{all.map((p) => {
             const h = elapsedHours(p);
             return (
-              <tr key={p.id}><td>{p.code}</td><td>{CONDITION_LABEL[p.condition]}</td><td>{h === null ? '—' : `${h.toFixed(1)}h`}</td><td>{meExclusion(p) ?? '판정에 씀'}</td>
+              <tr key={p.id}><td>{p.code}</td><td>{CONDITION_LABEL[p.condition]}</td><td>{h === null ? '—' : `${h.toFixed(1)}h`}</td><td>{viewStats(p).n ? `평균 ${(viewStats(p).meanMs / 1000).toFixed(1)}초` : '—'}</td><td>{meExclusion(p) ?? '판정에 씀'}{priorExposure(p) && <span className="bad"> · {priorExposure(p)}</span>}</td>
                 <td>{local.some((x) => x.id === p.id) && <button type="button" className="link" onClick={() => onDeleteLocal(p.id)}>지우기</button>}</td></tr>
             );
           })}</tbody>

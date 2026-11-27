@@ -24,12 +24,27 @@ function Experience({ b, onChange, onNext }: { b: MeExposure; onChange: (b: MeEx
   const [pick, setPick] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [shown, setShown] = useState<string | null>(null);
+  // 흔적 장면을 띄운 시각. 최소 시간이 지나야 다음 기록·종료 가능, 본 시간은 직전 기록에 남긴다
+  const [shownAt, setShownAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, []);
+  const left = shownAt === null ? 0 : Math.max(0, Math.ceil((ME_CRITERIA.noticeMinMs - (now - shownAt)) / 1000));
   const n = b.records.length;
+  /** 직전 장면을 본 시간을 마지막 기록에 적는다 */
+  const closeView = (x: MeExposure, at: number): MeExposure => {
+    if (shownAt === null || x.records.length === 0) return x;
+    const records = x.records.slice();
+    records[records.length - 1] = { ...records[records.length - 1]!, viewMs: at - shownAt };
+    return { ...x, records };
+  };
   const add = () => {
     const emo = pick ? emotionById(pick) : undefined;
-    if (!emo) return;
-    onChange({ ...b, records: [...b.records, { emotionId: emo.id, symbolId: emo.symbol, at: new Date().toISOString(), noted: note.trim().length > 0 }] });
+    if (!emo || left > 0) return;
+    const t = Date.now();
+    const base = closeView(b, t);
+    onChange({ ...base, records: [...base.records, { emotionId: emo.id, symbolId: emo.symbol, at: new Date(t).toISOString(), noted: note.trim().length > 0 }] });
     setShown(emo.id);
+    setShownAt(t);
     setPick(null);
     setNote('');
   };
@@ -51,10 +66,10 @@ function Experience({ b, onChange, onNext }: { b: MeExposure; onChange: (b: MeEx
             {EMOTIONS.map((e) => <button key={e.id} type="button" className={pick === e.id ? 'chip on' : 'chip'} onClick={() => setPick(e.id)}>{e.name}</button>)}
           </div>
           <label className="field">한마디(선택, 저장하지 않아요)<input value={note} maxLength={60} onChange={(e) => setNote(e.target.value)} placeholder="예: 주인공이 떠날 때 먹먹했다" /></label>
-          <button type="button" className="wide" disabled={!pick} onClick={add}>이 마음 기록하기</button>
+          <button type="button" className="wide" disabled={!pick || left > 0} onClick={add}>{left > 0 ? `흔적을 잠시 봐 주세요 (${left}초)` : '이 마음 기록하기'}</button>
         </>
       )}
-      {n >= ME_CRITERIA.experienceMin && <button type="button" className="wide" onClick={() => onNext(b)}>체험 마치기</button>}
+      {n >= ME_CRITERIA.experienceMin && <button type="button" className="wide" disabled={left > 0} onClick={() => onNext(closeView(b, Date.now()))}>체험 마치기</button>}
       <p className="hint">한마디는 그 순간을 떠올리는 데만 쓰고 저장하지 않아요(썼는지 여부만 남아요). 이름·연락처 같은 개인정보는 쓰지 마세요.</p>
     </section>
   );

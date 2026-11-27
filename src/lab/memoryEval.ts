@@ -24,12 +24,15 @@ export const ME_CRITERIA = {
   /** 체험: 최소·최대 기록 수 */
   experienceMin: 4,
   experienceMax: 8,
-  /** 도감 보기 최소 시간(ms). 훑고 지나가지 않게 */
+  /** 도감 보기 최소 시간(ms). 훑고 지나가지 않게(다 읽었다는 뜻은 아님) */
   guideMinMs: 20_000,
+  /** 체험: 흔적 장면을 보여 준 뒤 다음 입력·종료까지 최소 시간(ms). 빠른 클릭으로 노출 없이 넘기지 않게 */
+  noticeMinMs: 3_000,
 } as const;
 
 export type MeCondition = 'experience' | 'guide' | 'both' | 'none';
-export const CONDITIONS: MeCondition[] = ['experience', 'guide', 'both', 'none'];
+/** 자동 배정 순서. 3명 탐색에서도 대조(none)가 반드시 들어가도록 두 번째에 둔다(PR #29 리뷰) */
+export const CONDITIONS: MeCondition[] = ['experience', 'none', 'both', 'guide'];
 export const CONDITION_LABEL: Record<MeCondition, string> = {
   experience: '체험(마음 골라 흔적 생기기)',
   guide: '감정 도감 보기',
@@ -58,7 +61,11 @@ export interface MeTest {
   /** 평가 도중 정답 화면이 열려 있었음(판정 제외) */
   blindBreach?: boolean;
 }
-export interface MeRecord { emotionId: string; symbolId: string; at: string; noted: boolean }
+export interface MeRecord {
+  emotionId: string; symbolId: string; at: string; noted: boolean;
+  /** 흔적 장면을 본 시간(장면 표시 → 다음 기록 또는 체험 종료, ms) */
+  viewMs?: number;
+}
 export interface MeExposure {
   startedAt: string;
   completedAt?: string;
@@ -69,6 +76,9 @@ export interface MeExposure {
   guideMs: number;
 }
 export type MeOrigin = 'human' | 'synthetic-test';
+/** 평가 전에 정답이 담긴 화면(앱 감정 도감, 상징 평가 결과 등)을 본 적이 있는지. 자동으로 빼지 않고 보고서에 표시 */
+export type MePrior = 'no' | 'yes' | 'unsure';
+export const PRIOR_LABEL: Record<MePrior, string> = { no: '본 적 없어요', yes: '본 적 있어요', unsure: '잘 모르겠어요' };
 export interface MeParticipant {
   schema: typeof ME_SCHEMA;
   id: string;
@@ -82,6 +92,9 @@ export interface MeParticipant {
   a?: MeTest;
   b?: MeExposure;
   c?: MeTest;
+  /** A 전: 앱 도감·상징 평가 결과를 본 적 있는지 / C 전: 체험 뒤 도감·앱을 찾아봤는지 */
+  priorA?: MePrior;
+  priorC?: MePrior;
 }
 
 export const meItems = (): SeItem[] => seItems();
@@ -151,6 +164,7 @@ export function meProblems(x: unknown): string[] {
       if (k === 'C' && a.recall !== undefined && !RECALL_OPTIONS.some((r) => r.id === a.recall)) errs.push('C 회상 답이 틀려요');
     }
   }
+  for (const k of ['priorA', 'priorC'] as const) if (p[k] !== undefined && !['no', 'yes', 'unsure'].includes(p[k] as string)) errs.push('사전 노출 답이 틀려요');
   if (p.c && !p.b?.completedAt) errs.push('체험(B) 없이 C를 했어요');
   if (p.b && !p.a?.completedAt) errs.push('첫인상(A) 없이 B를 했어요');
   return [...new Set(errs)];
@@ -184,6 +198,20 @@ export function meCounted(ps: MeParticipant[]): MeParticipant[] {
     seen.add(p.id);
     return true;
   });
+}
+
+/** 정답 노출이 의심되는 기록(평가 전 도감·결과를 봤거나, 체험 뒤 찾아봤다고 답함). 진행자 확인용 */
+export function priorExposure(p: MeParticipant): string | null {
+  const why: string[] = [];
+  if (p.priorA === 'yes') why.push('평가 전에 도감·결과를 봄');
+  if (p.priorC === 'yes') why.push('체험 뒤 도감·앱을 찾아봄');
+  return why.length ? why.join(', ') : null;
+}
+
+/** 체험 장면을 본 시간 요약(빠른 통과 구분용) */
+export function viewStats(p: MeParticipant): { n: number; meanMs: number; quick: number } {
+  const xs = (p.b?.records ?? []).map((r) => r.viewMs).filter((x): x is number => typeof x === 'number');
+  return { n: xs.length, meanMs: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0, quick: xs.filter((x) => x < ME_CRITERIA.noticeMinMs).length };
 }
 
 const truthOf = new Map(meItems().map((i) => [i.id, i.truth]));
@@ -289,10 +317,18 @@ export function formatMeReport(ps: MeParticipant[], nameOf: (itemId: string) => 
   const L: string[] = [];
   L.push(`# 감정 상징 기억 평가(24시간) — 엔진 ${ENGINE_VERSION}`);
   L.push('');
-  L.push(`세 단계를 마친 참여자 ${counted.length}명, 판정에서 뺀 기록 ${ps.length - counted.length}개. ${counted.length < ME_CRITERIA.minParticipants ? `**${ME_CRITERIA.minParticipants}명 미만이라 보류.** ` : ''}탐색용 결과예요.`);
+  L.push(`세 단계를 마친 유효한 참여자 기록 ${counted.length}건, 판정에서 뺀 기록 ${ps.length - counted.length}건. ${counted.length < ME_CRITERIA.minParticipants ? `**${ME_CRITERIA.minParticipants}건 미만이라 보류.** ` : ''}탐색용 결과예요.`);
+  L.push('');
+  L.push('> 집계 단위는 참여자 기록(코드)이에요. 같은 사람이 다른 코드로 다시 했는지는 자동으로 알 수 없어서 진행자가 확인해요.');
+  L.push('> 조건별 인원이 1~2명이면 차이를 효과로 판단할 수 없어요. 반복되는 혼동과 화면 이해 문제를 찾는 데만 써요.');
+  L.push('> 회상은 스스로 느낀 떠오름 정도예요. 실제 기록 내용을 맞게 떠올렸는지 확인한 값이 아니에요.');
   L.push('');
   L.push('> 정답률이 올라도 같은 그림을 두 번 본 효과일 수 있어요. 노출 없음(대조) 조건과 비교해서 봐요. 회상은 정답률과 따로 봐요.');
   const off = counted.filter((p) => { const h = elapsedHours(p); return h !== null && (h < ME_CRITERIA.idealHours[0] || h > ME_CRITERIA.idealHours[1]); });
+  const contaminated = counted.filter((p) => priorExposure(p));
+  if (contaminated.length) L.push(`> ⚠️ 정답 노출이 의심되는 기록 ${contaminated.length}건(${contaminated.map((p) => `${p.code}: ${priorExposure(p)}`).join('; ')}). 빼고도 결론이 같은지 확인해 주세요.`);
+  const quick = counted.filter((p) => viewStats(p).quick > 0);
+  if (quick.length) L.push(`> 체험 장면을 ${ME_CRITERIA.noticeMinMs / 1000}초 미만 본 기록이 있는 참여자 ${quick.length}명.`);
   if (off.length) L.push(`> 경과 시간이 ${ME_CRITERIA.idealHours[0]}~${ME_CRITERIA.idealHours[1]}시간을 벗어난 참여자 ${off.length}명(${off.map((p) => `${p.code} ${elapsedHours(p)!.toFixed(1)}h`).join(', ')}).`);
   L.push('');
   L.push('## 정답률 (상징 12종)');
@@ -317,11 +353,12 @@ export function formatMeReport(ps: MeParticipant[], nameOf: (itemId: string) => 
   for (const x of cf) L.push(`- ${nameOf(x.itemId)}(${emotionName(x.truth)}) → ${emotionName(x.guess)} ×${x.n}`);
   L.push('');
   L.push('## 참여자');
-  L.push('| 코드 | 조건 | A 정답 | C 정답 | 경과 | 체험 기록 | 도감 열람 |');
-  L.push('|---|---|---|---|---|---|---|');
+  L.push('| 코드 | 조건 | A 정답 | C 정답 | 경과 | 체험 기록(평균 본 시간) | 도감 열람 | 사전 노출 |');
+  L.push('|---|---|---|---|---|---|---|---|');
   for (const p of counted) {
     const a = testStats(p.a); const c = testStats(p.c); const h = elapsedHours(p);
-    L.push(`| ${p.code} | ${CONDITION_LABEL[p.condition]} | ${a.correct}/${a.n} | ${c.correct}/${c.n} | ${h === null ? '—' : `${h.toFixed(1)}h`} | ${p.b!.records.length} | ${p.b!.guideOpens}회 ${Math.round(p.b!.guideMs / 1000)}초 |`);
+    const v = viewStats(p);
+    L.push(`| ${p.code} | ${CONDITION_LABEL[p.condition]} | ${a.correct}/${a.n} | ${c.correct}/${c.n} | ${h === null ? '—' : `${h.toFixed(1)}h`} | ${p.b!.records.length}${v.n ? ` (${(v.meanMs / 1000).toFixed(1)}초)` : ''} | ${p.b!.guideOpens}회 ${Math.round(p.b!.guideMs / 1000)}초 | ${priorExposure(p) ?? '—'} |`);
   }
   return L.join('\n');
 }

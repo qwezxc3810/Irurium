@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EMOTIONS } from '../../engine/mood';
 import {
   confusions, elapsedHours, exposureOf, exposureSplit, formatMeReport, groupSummary, ME_CRITERIA, meCounted, meExclusion, meItems, meProblems,
-  newParticipant, newTest, nextCondition, parseParticipants, stageOf, testStats, type MeCondition, type MeParticipant, type MeRecall,
+  newParticipant, newTest, nextCondition, parseParticipants, priorExposure, stageOf, testStats, viewStats, type MeCondition, type MeParticipant, type MeRecall,
 } from '../memoryEval';
 import { UNSURE } from '../symbolEval';
 
@@ -44,10 +44,32 @@ describe('기억 평가: 단계 흐름', () => {
     expect(elapsedHours(p)).toBeCloseTo(25);
   });
 
-  it('조건은 인원이 가장 적은 쪽으로 자동 배정(화면 시험은 세지 않음)', () => {
-    const ps = [fake('experience', 1), fake('guide', 2), fake('both', 3, { origin: 'synthetic-test' })];
+  it('자동 배정: 처음 3명 안에 반드시 대조(노출 없음)가 들어간다 — 체험 → 대조 → 체험+도감 → 도감 (PR #29 리뷰)', () => {
+    const ps: MeParticipant[] = [];
+    for (let i = 0; i < 3; i++) ps.push(fake(nextCondition(ps), 100 + i));
+    expect(ps.map((p) => p.condition)).toEqual(['experience', 'none', 'both']);
+    expect(nextCondition(ps)).toBe('guide');
+  });
+
+  it('자동 배정은 인원이 가장 적은 조건부터(화면 시험은 세지 않음)', () => {
+    const ps = [fake('experience', 1), fake('none', 2), fake('both', 3, { origin: 'synthetic-test' })];
     expect(nextCondition(ps)).toBe('both');
-    expect(nextCondition([...ps, fake('both', 4)])).toBe('none');
+    expect(nextCondition([...ps, fake('both', 4), fake('guide', 5)])).toBe('experience');
+  });
+
+  it('체험 장면 본 시간·사전 노출은 기록하고 표시만 한다(자동 제외 아님)', () => {
+    const sym = EMOTIONS.map((e) => e.symbol);
+    const p = fake('experience', 31, { exp: sym.slice(0, 3) });
+    p.b!.records = p.b!.records.map((r, i) => ({ ...r, viewMs: [5000, 1000, 4000][i] }));
+    expect(viewStats(p)).toEqual({ n: 3, meanMs: 10000 / 3, quick: 1 });
+    expect(priorExposure(p)).toBeNull();
+    p.priorA = 'yes';
+    expect(priorExposure(p)).toMatch(/평가 전/);
+    expect(meExclusion(p)).toBeNull();
+    const r = formatMeReport([p], (id) => id, (id) => id);
+    expect(r).toMatch(/정답 노출이 의심되는 기록 1건/);
+    expect(r).toMatch(/3초 미만 본 기록이 있는 참여자 1명/);
+    expect(meProblems({ ...p, priorC: 'maybe' })).toContain('사전 노출 답이 틀려요');
   });
 
   it('형식 검사: C는 B 없이 할 수 없고, 확신·회상 값이 맞아야 한다', () => {
@@ -119,7 +141,10 @@ describe('기억 평가: 집계(정답률과 회상 분리, 노출 조건별)', 
 
   it('보고서: 탐색용·대조 비교 안내, 경과 시간 벗어남 표시, 회상 표는 정답률 표와 따로', () => {
     const r = formatMeReport(ps, (id) => id, (id) => id);
-    expect(r).toMatch(/2명 미만|3명 미만이라 보류/);
+    expect(r).toMatch(/유효한 참여자 기록 2건/);
+    expect(r).toMatch(/3건 미만이라 보류/);
+    expect(r).toMatch(/진행자가 확인/);
+    expect(r).toMatch(/스스로 느낀 떠오름/);
     expect(r).toMatch(/노출 없음\(대조\)/);
     expect(r).toMatch(/벗어난 참여자 1명/);
     expect(r.indexOf('## 회상')).toBeGreaterThan(r.indexOf('## 정답률'));
