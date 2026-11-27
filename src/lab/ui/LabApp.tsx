@@ -14,13 +14,14 @@ import { derivedTanks, fingerprintOf, LAB_IMPORT_KEY, parseUserData, userRun, ve
 import { StyleCompare } from './StyleCompare';
 import { PerfTab } from './PerfTab';
 import { SymbolEvalTab } from './SymbolEvalTab';
+import { MemoryEvalTab } from './MemoryEvalTab';
 import { VisualEvalTab } from './VisualEvalTab';
 import { DailyTable, DistanceMatrix, FinalTable, FrameModal, Gallery, LineChart, OriginBadge, SERIES_COLORS, Thumb, type OpenFrame } from './components';
 
 /** 수치상 구별을 시각적 구별로 오해하지 않게 하는 안내(리뷰 반영). 보고서에도 같은 뜻으로 들어간다. */
 const VISUAL_CAVEAT = '위 감정 구별은 엔진 상태(물빛 조명값·요소 구성)로 계산한 상대적인 수치 지표이고, 지금 샘플과 지금 가중치에서만 성립해요. 실제 관장이 그림을 보고 한눈에 구별할 수 있다는 뜻은 아니에요. 지금 그림은 임시 SVG이고 같은 테마에 물고기가 3종뿐이라, 화면에서 느끼는 차이는 수치보다 작을 수 있어요. 시각적 구별은 짝짓기 테스트(실제 평가 3명 이상)로 따로 확인해야 해요.';
 
-type Tab = 'overview' | 'cases' | 'compare' | 'long' | 'hyp' | 'match' | 'v1' | 'sym' | 'style' | 'perf' | 'user';
+type Tab = 'overview' | 'cases' | 'compare' | 'long' | 'hyp' | 'match' | 'v1' | 'sym' | 'mem' | 'style' | 'perf' | 'user';
 
 const TABS: Array<[Tab, string]> = [
   ['overview', '개요'],
@@ -29,7 +30,7 @@ const TABS: Array<[Tab, string]> = [
   ['long', '장기 14~200일'],
   ['hyp', '가설 H1~H11'],
   ['match', '짝짓기 테스트'],
-  ['v1', '감정 시각 평가'], ['sym', '감정 상징 평가'],
+  ['v1', '감정 시각 평가'], ['sym', '감정 상징 평가'], ['mem', '기억 평가(24시간)'],
   ['style', '그래픽 비교'],
   ['perf', '성능 측정'],
   ['user', '실제 기록'],
@@ -38,7 +39,7 @@ const TABS: Array<[Tab, string]> = [
 export function LabApp() {
   const suite = useMemo<SuiteResult>(() => runSuite(), []);
   const hyps = useMemo(() => evaluateHypotheses(suite), [suite]);
-  const [tab, setTab] = useState<Tab>(() => (location.hash === '#user' ? 'user' : location.hash === '#style' ? 'style' : location.hash === '#perf' ? 'perf' : location.hash === '#v1' ? 'v1' : location.hash === '#sym' ? 'sym' : 'overview'));
+  const [tab, setTab] = useState<Tab>(() => (location.hash === '#user' ? 'user' : location.hash === '#style' ? 'style' : location.hash === '#perf' ? 'perf' : location.hash === '#v1' ? 'v1' : location.hash === '#sym' ? 'sym' : location.hash === '#mem' ? 'mem' : 'overview'));
   const [open, setOpen] = useState<OpenFrame | null>(null);
   const [caseId, setCaseId] = useState('case-A');
   const [cmpId, setCmpId] = useState('cmp-emotion');
@@ -80,6 +81,7 @@ export function LabApp() {
       {tab === 'perf' && <PerfTab suite={suite} />}
       {tab === 'v1' && <VisualEvalTab />}
       {tab === 'sym' && <SymbolEvalTab />}
+      {tab === 'mem' && <MemoryEvalTab />}
       {tab === 'user' && <UserTab onOpen={setOpen} />}
 
       <FrameModal open={open} onClose={() => setOpen(null)} />

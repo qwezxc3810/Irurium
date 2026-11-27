@@ -40,10 +40,14 @@ describe('감정 도감', () => {
     expect(stageScaleFor(0)).toBe(0.2);
   });
 
-  it('검증실(평가 화면)은 도감을 가져오지 않는다(평가 중 정답 노출 방지)', () => {
+  it('검증실 평가 화면은 도감을 가져오지 않는다(평가 중 정답 노출 방지). 예외는 기억 평가의 체험(B) 화면 하나', () => {
     const lab = import.meta.glob('../../lab/**/*.{ts,tsx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
     expect(Object.keys(lab).length).toBeGreaterThan(3);
+    const exposure = Object.keys(lab).filter((k) => k.endsWith('/MemoryExposure.tsx'));
+    expect(exposure).toHaveLength(1);
+    expect(lab[exposure[0]!]).toMatch(/ui\/encyclopedia/);
     for (const [path, src] of Object.entries(lab)) {
+      if (path.endsWith('/MemoryExposure.tsx')) continue;
       expect(src, path).not.toMatch(/ui\/encyclopedia|EmotionGuide/);
       for (const g of GUIDE) expect(src, path).not.toContain(g.meaning);
     }

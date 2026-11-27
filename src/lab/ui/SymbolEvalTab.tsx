@@ -162,7 +162,7 @@ export function SymbolEvalTab() {
   );
 }
 
-function Picture({ item, size, onLoad, onError, retry = 0 }: { item: SeItem; size: 'big' | 'phone' | 'thumb'; onLoad?: () => void; onError?: () => void; retry?: number }) {
+export function Picture({ item, size, onLoad, onError, retry = 0 }: { item: SeItem; size: 'big' | 'phone' | 'thumb'; onLoad?: () => void; onError?: () => void; retry?: number }) {
   const spec = ELS[item.el] ?? {};
   const k = size === 'big' ? 1.6 : size === 'thumb' ? 1 : PHONE_SCALE;
   const style = item.shape === 'swim' ? { width: Math.round((spec.displayWidth ?? 80) * k * (size === 'phone' ? 1 : 1.6)) } : { height: Math.round((spec.displayHeight ?? 80) * k) };
