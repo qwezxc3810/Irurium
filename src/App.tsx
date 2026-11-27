@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MemoryCard } from './ui/MemoryCard';
 import { memoryOf } from './ui/memory';
 import { EmotionGuide, TraceNotices } from './ui/EmotionGuide';
-import { traceCountsOf, traceNoticesOf } from './ui/encyclopedia';
+import { noticesForSnapshot, traceCountsOf } from './ui/encyclopedia';
 import { AquariumCanvas, type AquariumCanvasHandle } from './ui/AquariumCanvas';
 import { PerfPanel, perfEnabled } from './ui/PerfPanel';
 import { clearAutoDecision, useAutoQuality } from './ui/useAutoQuality';
@@ -69,7 +69,7 @@ export function App() {
   const [autoKey, setAutoKey] = useState(0);
   const [perfResults, setPerfResults] = useState<PerfResult[]>([]);
   const onPerfResult = useCallback((r: PerfResult) => setPerfResults((x) => [...x, r]), []);
-  const [lastChanges, setLastChanges] = useState<{ title: string; changes: Change[] } | null>(null);
+  const [lastChanges, setLastChanges] = useState<{ title: string; changes: Change[]; /** 이 변화가 나온 스냅샷(흔적 안내용). 참조가 아니라 id로 찾는다 */ snapshotId?: string } | null>(null);
   /** 기억 보기: 누른 요소 */
   const [memoryId, setMemoryId] = useState<string | null>(null);
   /** 감정 도감: null이면 닫힘, ''이면 열림, 상징 id면 그 칸을 강조해 열림 */
@@ -112,6 +112,7 @@ export function App() {
     setLastChanges({
       title: same > 1 ? '오늘 어항에 마음이 더해졌어요' : '어항에 변화가 생겼어요',
       changes: r.snapshot.changes,
+      snapshotId: r.snapshot.id,
     });
     bump();
     return r;
@@ -238,8 +239,8 @@ export function App() {
             <div className="card changes">
               <h2>{lastChanges.title}</h2>
               {(() => {
-                const snap = s.snapshots.find((x) => x.changes === lastChanges.changes);
-                return snap ? <TraceNotices notices={traceNoticesOf(snap.changes, snap.state.objects, snap.seq)} onMemory={setMemoryId} onGuide={setGuideFocus} /> : null;
+                const notices = noticesForSnapshot(s.snapshots, lastChanges.snapshotId);
+                return <TraceNotices notices={notices} onGuide={setGuideFocus} onMemory={(id) => setMemoryId(id)} hasMemory={(id) => head.state.objects.some((o) => o.id === id)} />;
               })()}
               <ul>
                 {lastChanges.changes.map((c, i) => (
@@ -254,7 +255,7 @@ export function App() {
                       <button key={c} className={draftEntry.moodChips.includes(c) ? 'chip on' : 'chip'}
                         onClick={() => {
                           const r = s.editEntry(draftEntry.id, { moodChips: [c] }, draftEntry.rev, now);
-                          setLastChanges({ title: r.mode === 'recomputed' ? '고친 마음으로 다시 그렸어요' : '기록만 고쳤어요', changes: s.head.changes });
+                          setLastChanges({ title: r.mode === 'recomputed' ? '고친 마음으로 다시 그렸어요' : '기록만 고쳤어요', changes: s.head.changes, snapshotId: s.head.id });
                           bump();
                         }}>{c}</button>
                     ))}
@@ -270,7 +271,7 @@ export function App() {
               <h2>끝까지 읽었어요?</h2>
               <p>마지막 쪽에 도착했어요. 완독하면 어항이 완성돼요.</p>
               <div className="row">
-                <button className="primary" onClick={() => { s.answerCompletion('finished', now); setLastChanges({ title: '어항이 완성됐어요', changes: s.head.changes }); bump(); }}>다 읽었어요</button>
+                <button className="primary" onClick={() => { s.answerCompletion('finished', now); setLastChanges({ title: '어항이 완성됐어요', changes: s.head.changes, snapshotId: s.head.id }); bump(); }}>다 읽었어요</button>
                 <button onClick={() => { s.answerCompletion('not_yet', now); bump(); }}>아직이에요</button>
                 <button onClick={async () => {
                   const r = await dialog.ask({ title: '이 어항의 총 쪽수', message: '책 정보는 그대로 두고 이 어항의 목표만 바꿔요.', input: { defaultValue: String(total ?? ''), inputMode: 'numeric' }, confirmLabel: '바꾸기' });
@@ -351,7 +352,7 @@ export function App() {
 
           <div className="card">
             <h2>기록 목록</h2>
-            <Timeline entries={s.entries} session={s} now={now} ask={dialog.ask} onChange={bump} onShow={(title, changes) => setLastChanges({ title, changes })} />
+            <Timeline entries={s.entries} session={s} now={now} ask={dialog.ask} onChange={bump} onShow={(title, changes, snapshotId) => setLastChanges({ title, changes, snapshotId })} />
           </div>
 
           <div className="card">
@@ -389,7 +390,7 @@ export function App() {
 
 function Timeline({ entries, session, now, ask, onChange, onShow }: {
   entries: readonly Entry[]; session: TankSession; now: number; ask: (o: AskOptions) => Promise<AskResult>;
-  onChange: () => void; onShow: (t: string, c: Change[]) => void;
+  onChange: () => void; onShow: (t: string, c: Change[], snapshotId?: string) => void;
 }) {
   if (entries.length === 0) return <p className="hint">아직 기록이 없어요.</p>;
   return (
@@ -405,7 +406,7 @@ function Timeline({ entries, session, now, ask, onChange, onShow }: {
             </div>
             {!e.deletedAt && (
               <div className="row small">
-                {snap && <button onClick={() => onShow(`#${e.seq} 기록의 변화`, snap.changes)}>변화 보기</button>}
+                {snap && <button onClick={() => onShow(`#${e.seq} 기록의 변화`, snap.changes, snap.id)}>변화 보기</button>}
                 <button onClick={async () => {
                   const snapNow = session.snapshotOfEntry(e.id);
                   const a = await ask({
@@ -416,7 +417,7 @@ function Timeline({ entries, session, now, ask, onChange, onShow }: {
                   if (!a.ok || !a.value) return;
                   const c = a.value;
                   const r = session.editEntry(e.id, { moodChips: [c] }, e.rev, now);
-                  onShow(r.mode === 'recomputed' ? '고친 마음으로 다시 그렸어요' : '이미 수족관에 담긴 기록이라 어항은 그대로예요. 기록만 고쳤어요.', r.mode === 'recomputed' ? session.head.changes : []);
+                  onShow(r.mode === 'recomputed' ? '고친 마음으로 다시 그렸어요' : '이미 수족관에 담긴 기록이라 어항은 그대로예요. 기록만 고쳤어요.', r.mode === 'recomputed' ? session.head.changes : [], r.mode === 'recomputed' ? session.head.id : undefined);
                   onChange();
                 }}>마음 고치기</button>
                 <button onClick={async () => {

@@ -2,7 +2,7 @@ import manifestJson from '../../public/assets/manifest.json';
 import { EMOTION_SYMBOLS } from '../engine/catalog';
 import { josa } from '../engine/compute';
 import { EMOTIONS, type EmotionDef } from '../engine/mood';
-import type { Change, PlacedObject } from '../engine/types';
+import type { Change, PlacedObject, Snapshot } from '../engine/types';
 
 /**
  * 감정 도감과 흔적 생성 안내(앱 UX). 규칙은 docs/EMOTION_GUIDE.md.
@@ -66,6 +66,8 @@ export interface TraceNotice {
   guide: GuideEntry;
   kind: 'new' | 'grown';
   stage: number;
+  /** 이번 변화에서 자란 횟수(완독 채움은 한 흔적이 여러 단계 자랄 수 있음) */
+  steps: number;
   /** 시간 표현 없는 짧은 안내. 예: "그리움이 유리병 편지가 되었어요" */
   headline: string;
   /** 엔진 변화 문장(출처·누적 정책을 따른 원문) */
@@ -79,6 +81,9 @@ export interface TraceNotice {
 export function traceNoticesOf(changes: readonly Change[], objects: readonly PlacedObject[], seq: number): TraceNotice[] {
   const out: TraceNotice[] = [];
   const seen = new Set<string>();
+  // 같은 흔적의 변화 문장 수(새로 생긴 문장 1 + 자란 문장들)
+  const hits = new Map<string, number>();
+  for (const c of changes) if (c.objectId) hits.set(c.objectId, (hits.get(c.objectId) ?? 0) + 1);
   for (const c of changes) {
     if (!c.objectId || seen.has(c.objectId)) continue;
     const obj = objects.find((o) => o.id === c.objectId);
@@ -87,12 +92,16 @@ export function traceNoticesOf(changes: readonly Change[], objects: readonly Pla
     if (!guide) continue;
     seen.add(c.objectId);
     const kind = obj.bornSeq === seq ? 'new' : 'grown';
+    const n = hits.get(obj.id) ?? 1;
+    const steps = kind === 'new' ? n - 1 : n;
     const emo = guide.emotion.name;
     const sym = guide.symbolName;
     const headline = kind === 'new'
       ? `${emo}${josa(emo, '이', '가')} ${sym}${josa(sym, '이', '가')} 되었어요`
-      : `${emo}${josa(emo, '이', '가')} 더해져 ${sym}${josa(sym, '이', '가')} 자랐어요`;
-    out.push({ objectId: obj.id, guide, kind, stage: obj.stage ?? 1, headline, why: c.text });
+      : `${emo}${josa(emo, '이', '가')} 더해져 ${sym}${josa(sym, '이', '가')} ${steps > 1 ? `${steps}단계 ` : ''}자랐어요`;
+    // 같은 흔적의 문장이 여럿이면 엔진 문장들을 이어 보여 준다(출처 설명은 그대로)
+    const why = changes.filter((x) => x.objectId === obj.id).map((x) => x.text).join(' · ');
+    out.push({ objectId: obj.id, guide, kind, stage: obj.stage ?? 1, steps, headline, why });
   }
   return out;
 }
@@ -102,4 +111,10 @@ export function traceCountsOf(objects: readonly PlacedObject[]): Record<string, 
   const out: Record<string, number> = {};
   for (const o of objects) if (o.kind === 'emotion') out[o.el] = (out[o.el] ?? 0) + 1;
   return out;
+}
+
+/** 스냅샷 id로 그 기록의 흔적 안내를 만든다(참조 비교가 아니라 id라서 저장·복원·복사 뒤에도 같다) */
+export function noticesForSnapshot(snapshots: readonly Snapshot[], snapshotId: string | undefined): TraceNotice[] {
+  const snap = snapshotId ? snapshots.find((x) => x.id === snapshotId) : undefined;
+  return snap ? traceNoticesOf(snap.changes, snap.state.objects, snap.seq) : [];
 }

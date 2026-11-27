@@ -4,7 +4,8 @@ import { EMOTIONS } from '../../engine/mood';
 import { seedFromString } from '../../engine/random';
 import { TankSession, type NewEntry } from '../../engine/session';
 import type { TankConfig } from '../../engine/types';
-import { GUIDE, guideOfSymbol, stageScaleFor, traceCountsOf, traceNoticesOf } from '../encyclopedia';
+import { GUIDE, guideOfSymbol, noticesForSnapshot, stageScaleFor, traceCountsOf, traceNoticesOf } from '../encyclopedia';
+import type { Change, PlacedObject } from '../../engine/types';
 
 const START = '2026-01-01';
 const cfg = (total: number | null): TankConfig => ({
@@ -92,5 +93,40 @@ describe('흔적 생성 안내', () => {
     for (const x of ns) expect(x.headline).not.toMatch(/오늘|그동안/);
     expect(ns.some((x) => /그동안의 평온이 모여/.test(x.why))).toBe(true);
     expect(traceCountsOf(s.head.state.objects)['emotion.star-jelly']).toBeGreaterThan(0);
+  });
+});
+
+describe('흔적 안내: 스냅샷 찾기·여러 단계 성장 (PR #28 리뷰)', () => {
+  it('스냅샷을 id로 찾으므로 직렬화·복원(복사본)에서도 같은 안내가 나온다. 지난 기록 "변화 보기"도 그 스냅샷 기준', () => {
+    const s = new TankSession(cfg(null));
+    s.addEntry(e(0, 15, ['슬픔']), at(0));
+    const id = s.head.id;
+    s.addEntry(e(1, 3, ['평온']), at(1));
+    const copy = JSON.parse(JSON.stringify(s.snapshots));
+    const a = noticesForSnapshot(s.snapshots, id);
+    const b = noticesForSnapshot(copy, id);
+    expect(a).toHaveLength(1);
+    expect(b).toEqual(a);
+    expect(a[0]!.headline).toBe('슬픔이 푸른 눈물 진주가 되었어요');
+    expect(noticesForSnapshot(copy, undefined)).toEqual([]);
+    expect(noticesForSnapshot(copy, 'none')).toEqual([]);
+  });
+
+  it('한 변화에서 같은 흔적이 여러 번 자라면 한 장으로 묶고 "n단계 자랐어요", 엔진 문장은 모두 이어 보여 준다', () => {
+    const g = GUIDE.find((x) => x.emotion.id === 'emo.calm')!;
+    const obj = { id: 'o1', el: g.symbolId, kind: 'emotion', layer: 'back', x: 0, y: 0, scale: 1, tint: 0, bornSeq: 2, stage: 3 } as PlacedObject;
+    const changes: Change[] = [
+      { level: 'finale', text: '그동안의 평온이 모여 별빛 해파리가 한 단계 자랐어요', objectId: 'o1' },
+      { level: 'finale', text: '그동안의 평온이 모여 별빛 해파리가 한 단계 자랐어요', objectId: 'o1' },
+    ];
+    const [n] = traceNoticesOf(changes, [obj], 9);
+    expect(n!.kind).toBe('grown');
+    expect(n!.steps).toBe(2);
+    expect(n!.headline).toBe('평온이 더해져 별빛 해파리가 2단계 자랐어요');
+    expect(n!.why.split(' · ')).toHaveLength(2);
+    const [m] = traceNoticesOf([{ ...changes[0]!, text: '새로 생김' }, changes[1]!], [{ ...obj, bornSeq: 9 }], 9);
+    expect(m!.kind).toBe('new');
+    expect(m!.steps).toBe(1);
+    expect(m!.headline).toBe('평온이 별빛 해파리가 되었어요');
   });
 });
