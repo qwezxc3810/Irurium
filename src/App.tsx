@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MemoryCard } from './ui/MemoryCard';
 import { memoryOf } from './ui/memory';
+import { EmotionGuide, TraceNotices } from './ui/EmotionGuide';
+import { traceCountsOf, traceNoticesOf } from './ui/encyclopedia';
 import { AquariumCanvas, type AquariumCanvasHandle } from './ui/AquariumCanvas';
 import { PerfPanel, perfEnabled } from './ui/PerfPanel';
 import { clearAutoDecision, useAutoQuality } from './ui/useAutoQuality';
@@ -9,7 +11,7 @@ import { loadPref, PREF_LABEL, safeStorage, type QualityPref } from './perf/auto
 import type { PerfResult } from './perf/report';
 import { useDialog, type AskOptions, type AskResult } from './ui/Dialog';
 import { BASE_CHIPS, BASE_CHIPS_V2, analyzeMood, representativeEmotion } from './engine/mood';
-import type { EngineVersion } from './engine/config';
+import { hasEmotionTraces, type EngineVersion } from './engine/config';
 import { toggleChip } from './ui/chips';
 
 /** 어항 엔진 버전에 맞는 마음 칩(0.2.0 어항은 옛 8개, 새 어항은 감정 사전 12개) */
@@ -70,6 +72,9 @@ export function App() {
   const [lastChanges, setLastChanges] = useState<{ title: string; changes: Change[] } | null>(null);
   /** 기억 보기: 누른 요소 */
   const [memoryId, setMemoryId] = useState<string | null>(null);
+  /** 감정 도감: null이면 닫힘, ''이면 열림, 상징 id면 그 칸을 강조해 열림 */
+  const [guideFocus, setGuideFocus] = useState<string | null>(null);
+  const leftRef = useRef<HTMLElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
   const demoTimer = useRef<number | null>(null);
@@ -197,13 +202,14 @@ export function App() {
           <p className="eyebrow">이루리움(가제) · 어항 시뮬레이터 v0.1</p>
           <h1>나의 모든 성장이 어항이 된다</h1>
         </div>
+        {hasEmotionTraces(s.engineVersion) && <button type="button" className="subtle guide-open" onClick={() => setGuideFocus(guideFocus === null ? '' : null)} aria-expanded={guideFocus !== null}>감정 도감</button>}
         <p className="today">
           오늘 {today} ({WEEKDAYS[new Date(`${today}T00:00:00Z`).getUTCDay()]}) · {new Date(now).toLocaleTimeString('ko-KR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })}
         </p>
       </header>
 
       <main className="grid">
-        <section className="left">
+        <section className="left" ref={leftRef}>
           <AquariumCanvas ref={canvas} state={head.state} options={options} quality={quality} onObjectTap={setMemoryId} />
           {(() => {
             const obj = memoryId ? head.state.objects.find((o) => o.id === memoryId) : undefined;
@@ -212,6 +218,9 @@ export function App() {
               ? <MemoryCard memory={mem} kind={obj.kind} onClose={() => setMemoryId(null)} />
               : <p className="hint memory-hint">어항 속 물고기·수초·장식을 누르면 그 요소가 생긴 날의 기록을 볼 수 있어요.</p>;
           })()}
+          {guideFocus !== null && hasEmotionTraces(s.engineVersion) && (
+            <EmotionGuide counts={traceCountsOf(head.state.objects)} canvasWidth={leftRef.current?.clientWidth ?? 600} focus={guideFocus} onClose={() => setGuideFocus(null)} />
+          )}
           {showPerf && (
             <PerfPanel canvas={canvas} scene="지금 어항(데모)" quality={quality} onQuality={(q) => setQualityPref(q)} results={perfResults} onResult={onPerfResult} onClear={() => setPerfResults([])} />
           )}
@@ -228,6 +237,10 @@ export function App() {
           {lastChanges && (
             <div className="card changes">
               <h2>{lastChanges.title}</h2>
+              {(() => {
+                const snap = s.snapshots.find((x) => x.changes === lastChanges.changes);
+                return snap ? <TraceNotices notices={traceNoticesOf(snap.changes, snap.state.objects, snap.seq)} onMemory={setMemoryId} onGuide={setGuideFocus} /> : null;
+              })()}
               <ul>
                 {lastChanges.changes.map((c, i) => (
                   <li key={i} className={`lv-${c.level}`}><b>{LEVEL_LABEL[c.level]}</b> {c.text}</li>

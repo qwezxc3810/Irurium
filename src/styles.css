@@ -82,3 +82,21 @@ button.link { background: none; border: none; color: #2563eb; padding: 0; margin
 .memory-hint { margin-top: 8px; }
 .memory-why { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
 .rep-badge { margin-left: 4px; font-size: 10.5px; background: #fff; color: var(--accent); border-radius: 999px; padding: 0 5px; font-weight: 700; }
+
+/* 감정 흔적 안내·감정 도감 (docs/EMOTION_GUIDE.md) */
+.top .guide-open { width: auto; font-size: 13px; padding: 6px 12px; }
+.trace-notices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.trace-notice { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 12px; background: rgba(37, 99, 235, 0.06); border: 1px solid rgba(37, 99, 235, 0.15); }
+.trace-notice img { object-fit: contain; flex: none; }
+.trace-notice-body { font-size: 14px; line-height: 1.5; }
+.trace-notice-body p { margin: 2px 0 0; }
+.row.tight { gap: 12px; }
+.guide { margin-top: 10px; }
+.guide-grid { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.guide-item { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 12px; border: 1px solid var(--line); font-size: 14px; }
+.guide-item.focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2); }
+.guide-item p { margin: 2px 0 0; }
+.guide-art { flex: none; display: flex; align-items: flex-end; justify-content: center; background: linear-gradient(#173a5c, #0e2a44); border-radius: 10px; overflow: hidden; }
+.guide-art img { object-fit: contain; margin-bottom: 4px; }
+.guide-symbol { font-size: 13px; color: var(--muted); }
+.guide-count { margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: rgba(37, 99, 235, 0.1); color: #1d4ed8; }
